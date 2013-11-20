@@ -17,3 +17,5 @@ void *vector_get(vector *v, int index);
 void vector_set(vector *v, int index, void *value);
 
 void vector_free(vector *v);
+
+void vector_test();

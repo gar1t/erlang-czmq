@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
+
 #include "vector.h"
 
 void vector_ensure_capacity(vector *v);
@@ -42,53 +44,47 @@ void vector_free(vector *v) {
     free(v->data);
 }
 
-// tests
-int main()
+void vector_test()
 {
+    printf (" * vector: ");
+
     vector v;
     vector_init(&v);
-    
-    int i1 = 10;
-    int i2 = 11;
-    int i3 = 12;
 
-    vector_append(&v, &i1);
-    vector_append(&v, &i2);
-    vector_append(&v, &i3);
-
-    printf("vector size is %i\n", v.size);
-    printf("element at 0 is %i\n", *(int*)vector_get(&v, 0));
-    printf("element at 1 is %i\n", *(int*)vector_get(&v, 1));
-    printf("element at 2 is %i\n", *(int*)vector_get(&v, 2));
-
-    int i4 = 13;
-
-    vector_set(&v, 0, &i4);
-    printf("after set, element at 0 is %i\n", *(int*)vector_get(&v, 0));
-
-    const int count = 100;
-    int i;
-    int *j;
-
-    printf("testing %i set operations:\n", count);
+    // Write a bunch of heap allocated integers
+    const int count = 100000;
+    int i, *j;
     for (i = 0; i < count; i++) {
         j = malloc(sizeof(int));
         *j = i;
         vector_set(&v, i, j);
     }
 
+    // Read values back and check
     int errors = 0;
-
     for (i = 0; i < count; i++) {
         j = (int*)vector_get(&v, i);
         if (i != *j) {
-            printf("- unexpected vector value at pos %i: %i\n", i, *j);
-            errors = 1;
+            printf(" # unexpected vector value at pos %i: %i\n", i, *j);
+            errors++;
         }
     }
-    if (!errors) {
-        printf("- all values written and read successfully\n");
+
+    // Free memory and set values to NULL
+    for (i = 0; i < count; i++) {
+        j = (int*)vector_get(&v, i);
+        free(j);
+        vector_set(&v, i, NULL);
+        j = (int*)vector_get(&v, i);
+        if (j) {
+            printf(" # unexpected vector value at pos %i: %i\n", i, *j);
+            errors++;
+        }
     }
 
-    return 0;
+    vector_free(&v);
+
+    assert (!errors);
+
+    printf ("OK\n");
 }
