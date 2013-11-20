@@ -1,0 +1,8 @@
+%%% -*-erlang-*-
+{application, czmq,
+ [{description, "Erlang bindings for CZMQ"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [kernel, stdlib]},
+  {env, []}
+ ]}.

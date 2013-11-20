@@ -1,0 +1,5 @@
+*.o
+*.so
+*.beam
+*.bak
+c_src/vector
