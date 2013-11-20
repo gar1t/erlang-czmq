@@ -2,4 +2,5 @@
 *.so
 *.beam
 *.bak
-c_src/vector
+ebin
+priv/czmq_port
