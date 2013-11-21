@@ -17,10 +17,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "czmq.h"
+#undef ETERM // collision between zmq.h and erl_interface.h
 #include "erl_interface.h"
 #include "vector.h"
-
-typedef unsigned char byte;
 
 #define SUCCESS 0
 
@@ -34,17 +34,30 @@ typedef unsigned char byte;
 #define CMD_BUF_SIZE 10240
 #define REPLY_BUF_SIZE 10240
 
-ETERM *ETERM_PONG;
-ETERM *ETERM_ZERO;
+#define MAX_SOCKETS 999999
+
+#define assert_tuple_size(term, size) \
+    assert(ERL_IS_TUPLE(term)); \
+    assert(erl_size(term) == size)
+
+typedef unsigned char byte;
 
 typedef struct {
     byte reply_buf[REPLY_BUF_SIZE];
+    zctx_t *ctx;
+    vector sockets;
 } state;
 
-typedef struct {
-    ETERM *pattern;
-    void (*handler)(ETERM*, state*);
-} cmd_handler;
+typedef void (*cmd_handler)(ETERM*, state*);
+
+ETERM *ETERM_CMD_PATTERN;
+ETERM *ETERM_OK;
+ETERM *ETERM_UNDEFINED;
+ETERM *ETERM_TODO;
+ETERM *ETERM_PONG;
+ETERM *ETERM_ERROR_INVALID_SOCKET;
+ETERM *ETERM_ERROR_BIND_FAILED;
+ETERM *ETERM_ERROR_CONNECT_FAILED;
 
 static int read_exact(byte *buf, int len)
 {
@@ -119,47 +132,167 @@ static void write_term(ETERM *term, state *state) {
     write_cmd(state->reply_buf, len);
 }
 
-static void handle_ping(ETERM *term, state *state) {
+static void handle_ping(ETERM *args, state *state) {
     write_term(ETERM_PONG, state);
 }
 
-static void handle_poll(ETERM *term, state *state) {
-    write_term(ETERM_ZERO, state);
+static int save_socket(void *socket, state *state) {
+    int i;
+    for (i = 0; i < MAX_SOCKETS; i++) {
+        if (!vector_get(&state->sockets, i)) {
+            vector_set(&state->sockets, i, socket);
+            return i;
+        }
+    }
+    assert(0);
+}
+
+static void handle_zsocket_new(ETERM *args, state *state) {
+    assert_tuple_size(args, 1);
+    ETERM *type_arg = erl_element(1, args);
+    int type = ERL_INT_VALUE(type_arg);
+
+    void *socket = zsocket_new(state->ctx, type);
+    assert(socket);
+
+    int index = save_socket(socket, state);
+    ETERM *index_term = erl_mk_int(index);
+    write_term(index_term, state);
+    erl_free_term(index_term);
+}
+
+static void *get_socket(int index, state *state) {
+    return vector_get(&state->sockets, index);
+}
+
+static void handle_zsocket_bind(ETERM *args, state *state) {
+    assert_tuple_size(args, 2);
+    ETERM *socket_id_arg = erl_element(1, args);
+    ETERM *endpoint_arg = erl_element(2, args);
+
+    int socket_id = ERL_INT_VALUE(socket_id_arg);
+    void *socket = get_socket(socket_id, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    char *endpoint = erl_iolist_to_string(endpoint_arg);
+    int rc = zsocket_bind(socket, endpoint);
+    if (rc == -1) {
+        write_term(ETERM_ERROR_BIND_FAILED, state);
+        return;
+    }
+
+    ETERM *result = erl_format("{ok,~i}", rc);
+    write_term(result, state);
+
+    erl_free(endpoint);
+    erl_free_term(result);
+}
+
+static void handle_zsocket_connect(ETERM *args, state *state) {
+    assert_tuple_size(args, 2);
+    ETERM *socket_id_arg = erl_element(1, args);
+    ETERM *endpoint_arg = erl_element(2, args);
+
+    int socket_id = ERL_INT_VALUE(socket_id_arg);
+    void *socket = get_socket(socket_id, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    char *endpoint = erl_iolist_to_string(endpoint_arg);
+    int rc = zsocket_connect(socket, endpoint);
+    if (rc == -1) {
+        write_term(ETERM_ERROR_CONNECT_FAILED, state);
+        return;
+    }
+
+    write_term(ETERM_OK, state);
+
+    erl_free(endpoint);
+}
+
+static void handle_zstr_send(ETERM *args, state *state) {
+    assert_tuple_size(args, 2);
+    ETERM *socket_id_arg = erl_element(1, args);
+    ETERM *data_arg = erl_element(2, args);
+
+    int socket_id = ERL_INT_VALUE(socket_id_arg);
+    void *socket = get_socket(socket_id, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    char *data = erl_iolist_to_string(data_arg);
+    zstr_send(socket, data);
+
+    write_term(ETERM_OK, state);
+
+    erl_free(data);
+}
+
+static void handle_zstr_recv_nowait(ETERM *args, state *state) {
+    assert_tuple_size(args, 1);
+    ETERM *socket_id_arg = erl_element(1, args);
+
+    int socket_id = ERL_INT_VALUE(socket_id_arg);
+    void *socket = get_socket(socket_id, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    char *data = zstr_recv_nowait(socket);
+    
+    if (data) {
+        ETERM *result = erl_format("{ok,~s}", data);
+        write_term(result, state);
+        erl_free_term(result);
+        free(data);
+    } else {
+        write_term(ETERM_UNDEFINED, state);
+    }
 }
 
 static void handle_cmd(byte *buf, state *state, int handler_count,
                        cmd_handler *handlers) {
-    ETERM *term;
-    int i, handled = 0;
-
-    term = erl_decode(buf);
-
-    for (i = 0; !handled && i < handler_count; i++) {
-        if (erl_match(handlers[i].pattern, term)) {
-            handlers[i].handler(term, state);
-            handled = 1;
-        }
-    }
-
-    if (!handled) {
-        fprintf(stderr, "unhandled command: ");
-        erl_print_term(stderr, term);
+    ETERM *cmd_term = erl_decode(buf);
+    if (!erl_match(ETERM_CMD_PATTERN, cmd_term)) {
+        fprintf(stderr, "invalid cmd format: ");
+        erl_print_term(stderr, cmd_term);
         fprintf(stderr, "\n");
         exit(EXIT_INTERNAL_ERROR);
     }
 
-    erl_free_compound(term);
+    ETERM *cmd_id_term = erl_element(1, cmd_term);
+    int cmd_id = ERL_INT_VALUE(cmd_id_term);
+    if (cmd_id < 0 || cmd_id >= handler_count) {
+        fprintf(stderr, "cmd_id out of range: %i", cmd_id);
+        exit(EXIT_INTERNAL_ERROR);
+    }
+
+    ETERM *cmd_args_term = erl_element(2, cmd_term);
+    handlers[cmd_id](cmd_args_term, state);
+
+    erl_free_compound(cmd_term);
+    erl_free_compound(cmd_id_term);
+    erl_free_compound(cmd_args_term);
 }
 
-int loop() {
-    int HANDLER_COUNT = 2;
+static int loop(state *state) {
+    int HANDLER_COUNT = 6;
     cmd_handler handlers[HANDLER_COUNT];
-    handlers[0].pattern = erl_format("ping");
-    handlers[0].handler = &handle_ping;
-    handlers[1].pattern = erl_format("poll");
-    handlers[1].handler = &handle_poll;
+    handlers[0] = &handle_ping;
+    handlers[1] = &handle_zsocket_new;
+    handlers[2] = &handle_zsocket_bind;
+    handlers[3] = &handle_zsocket_connect;
+    handlers[4] = &handle_zstr_send;
+    handlers[5] = &handle_zstr_recv_nowait;
 
-    state state;
     int cmd_len;
     byte cmd_buf[CMD_BUF_SIZE];
 
@@ -170,30 +303,50 @@ int loop() {
         } else if (cmd_len < 0) {
             exit(EXIT_PORT_READ_ERROR);
         } else {
-            handle_cmd(cmd_buf, &state, HANDLER_COUNT, handlers);
+            handle_cmd(cmd_buf, state, HANDLER_COUNT, handlers);
         }
     }
 
     return 0;
 }
 
-int test() {
+static int test() {
     printf("Testing erlang-czmq\n");
     vector_test();
     return 0;
 }
 
-void init_eterms() {
+static void init_eterms() {
+    ETERM_CMD_PATTERN = erl_format("{_,_}");
+    ETERM_OK = erl_format("ok");
+    ETERM_UNDEFINED = erl_format("undefined");
+    ETERM_TODO = erl_format("todo");
     ETERM_PONG = erl_format("pong");
-    ETERM_ZERO = erl_format("0");
+    ETERM_ERROR_INVALID_SOCKET = erl_format("{error,invalid_socket}");
+    ETERM_ERROR_BIND_FAILED = erl_format("{error,bind_failed}");
+    ETERM_ERROR_CONNECT_FAILED = erl_format("{error,connect_failed}");
+}
+
+static void init_state(state *state) {
+    state->ctx = zctx_new();
+    assert(state->ctx);
+    vector_init(&state->sockets);
 }
 
 int main(int argc, char *argv[]) {
+    state state;
+
     erl_init(NULL, 0);
     init_eterms();
+    init_state(&state);
+
+    int ret;
+
     if (argc > 1 && strcmp(argv[1], "--test") == 0) {
-        return test();
+        ret = test();
     } else {
-        return loop();
+        ret = loop(&state);
     }
+
+    return ret;
 }
