@@ -165,17 +165,39 @@ static void *get_socket(int index, state *state) {
     return vector_get(&state->sockets, index);
 }
 
-static void handle_zsocket_bind(ETERM *args, state *state) {
-    assert_tuple_size(args, 2);
-    ETERM *socket_id_arg = erl_element(1, args);
-    ETERM *endpoint_arg = erl_element(2, args);
+static void *socket_from_arg(ETERM *args, int arg_pos, state *state) {
+    ETERM *socket_arg = erl_element(arg_pos, args);
+    int socket_index = ERL_INT_VALUE(socket_arg);
+    return get_socket(socket_index, state);
+}
 
-    int socket_id = ERL_INT_VALUE(socket_id_arg);
-    void *socket = get_socket(socket_id, state);
+static void handle_zsocket_type_str(ETERM *args, state *state) {
+    assert_tuple_size(args, 1);
+
+    void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
         return;
     }
+
+    char *type_str = zsocket_type_str(socket);
+    ETERM *reply = erl_mk_string(type_str);
+
+    write_term(reply, state);
+
+    erl_free_term(reply);
+}
+
+static void handle_zsocket_bind(ETERM *args, state *state) {
+    assert_tuple_size(args, 2);
+
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    ETERM *endpoint_arg = erl_element(2, args);
 
     char *endpoint = erl_iolist_to_string(endpoint_arg);
     int rc = zsocket_bind(socket, endpoint);
@@ -193,16 +215,14 @@ static void handle_zsocket_bind(ETERM *args, state *state) {
 
 static void handle_zsocket_connect(ETERM *args, state *state) {
     assert_tuple_size(args, 2);
-    ETERM *socket_id_arg = erl_element(1, args);
-    ETERM *endpoint_arg = erl_element(2, args);
 
-    int socket_id = ERL_INT_VALUE(socket_id_arg);
-    void *socket = get_socket(socket_id, state);
+    void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
         return;
     }
 
+    ETERM *endpoint_arg = erl_element(2, args);
     char *endpoint = erl_iolist_to_string(endpoint_arg);
     int rc = zsocket_connect(socket, endpoint);
     if (rc == -1) {
@@ -215,18 +235,30 @@ static void handle_zsocket_connect(ETERM *args, state *state) {
     erl_free(endpoint);
 }
 
-static void handle_zstr_send(ETERM *args, state *state) {
-    assert_tuple_size(args, 2);
-    ETERM *socket_id_arg = erl_element(1, args);
-    ETERM *data_arg = erl_element(2, args);
+static void handle_zsocket_destroy(ETERM *args, state *state) {
+    assert_tuple_size(args, 1);
 
-    int socket_id = ERL_INT_VALUE(socket_id_arg);
-    void *socket = get_socket(socket_id, state);
+    void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
         return;
     }
 
+    zsocket_destroy(state->ctx, socket);
+
+    write_term(ETERM_OK, state);
+}
+
+static void handle_zstr_send(ETERM *args, state *state) {
+    assert_tuple_size(args, 2);
+
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    ETERM *data_arg = erl_element(2, args);
     char *data = erl_iolist_to_string(data_arg);
     zstr_send(socket, data);
 
@@ -237,10 +269,8 @@ static void handle_zstr_send(ETERM *args, state *state) {
 
 static void handle_zstr_recv_nowait(ETERM *args, state *state) {
     assert_tuple_size(args, 1);
-    ETERM *socket_id_arg = erl_element(1, args);
 
-    int socket_id = ERL_INT_VALUE(socket_id_arg);
-    void *socket = get_socket(socket_id, state);
+    void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
         return;
@@ -284,14 +314,16 @@ static void handle_cmd(byte *buf, state *state, int handler_count,
 }
 
 static int loop(state *state) {
-    int HANDLER_COUNT = 6;
+    int HANDLER_COUNT = 8;
     cmd_handler handlers[HANDLER_COUNT];
     handlers[0] = &handle_ping;
     handlers[1] = &handle_zsocket_new;
-    handlers[2] = &handle_zsocket_bind;
-    handlers[3] = &handle_zsocket_connect;
-    handlers[4] = &handle_zstr_send;
-    handlers[5] = &handle_zstr_recv_nowait;
+    handlers[2] = &handle_zsocket_type_str;
+    handlers[3] = &handle_zsocket_bind;
+    handlers[4] = &handle_zsocket_connect;
+    handlers[5] = &handle_zsocket_destroy;
+    handlers[6] = &handle_zstr_send;
+    handlers[7] = &handle_zstr_recv_nowait;
 
     int cmd_len;
     byte cmd_buf[CMD_BUF_SIZE];

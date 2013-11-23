@@ -57,7 +57,7 @@ czmq:zsocket_bind(C, Writer, "tcp://*:1020"),
 Reader = czmq:zsocket_new(C, ?ZMQ_PULL),
 czmq:zsocket_connect(C, Reader, "tcp://localhost:1020"),
 
-czmq:subscribe(C, Reader, self(),
+czmq:subscribe(C, Reader),
 Msg = "Watson, I found your flogger",
 czmq:zstr_send(C, Writer, Msg),
 receive
@@ -66,6 +66,11 @@ after
     100 -> error(not_delivered)
 end
 ```
+
+I think the best way to implement this is to use a separate process (e.g. a
+timer czmq_poller) to poll the socket and send received messages to a registred
+process. This process would monitor both the czmq process and the subscriber
+process and terminate if either of those terminated.
 
 ## Simplest Possible Thing That Could Work
 
