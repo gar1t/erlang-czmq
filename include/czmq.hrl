@@ -10,3 +10,7 @@
 -define(ZMQ_XPUB, 9).
 -define(ZMQ_XSUB, 10).
 -define(ZMQ_STREAM, 11).
+
+-define(ZFRAME_MORE, 1).
+-define(ZFRAME_REUSE, 2).
+-define(ZFRAME_DONTWAIT, 4).

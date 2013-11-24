@@ -5,12 +5,17 @@
 -export([start/0, start_link/0,
          ping/1, ping/2,
          zsocket_new/2,
-         zsocket_type_str/2,
-         zsocket_bind/3,
-         zsocket_connect/3,
-         zsocket_destroy/2,
-         zstr_send/3,
-         zstr_recv_nowait/2,
+         zsocket_type_str/1,
+         zsocket_bind/2,
+         zsocket_connect/2,
+         zsocket_sendmem/2,
+         zsocket_sendmem/3,
+         zsocket_destroy/1,
+         zstr_send/2,
+         zstr_recv_nowait/1,
+         zframe_recv_nowait/1,
+         zframe_data/1,
+         zframe_more/1,
          terminate/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -24,14 +29,16 @@
 -define(MSG_TIMEOUT, 1000).
 
 %% These *must* correspond to the handlers in czmq_port.c
--define(CMD_PING,               0).
--define(CMD_ZSOCKET_NEW,        1).
--define(CMD_ZSOCKET_TYPE_STR,   2).
--define(CMD_ZSOCKET_BIND,       3).
--define(CMD_ZSOCKET_CONNECT,    4).
--define(CMD_ZSOCKET_DESTROY,    5).
--define(CMD_ZSTR_SEND,          6).
--define(CMD_ZSTR_RECV_NOWAIT,   7).
+-define(CMD_PING,                0).
+-define(CMD_ZSOCKET_NEW,         1).
+-define(CMD_ZSOCKET_TYPE_STR,    2).
+-define(CMD_ZSOCKET_BIND,        3).
+-define(CMD_ZSOCKET_CONNECT,     4).
+-define(CMD_ZSOCKET_SENDMEM,     5).
+-define(CMD_ZSOCKET_DESTROY,     6).
+-define(CMD_ZSTR_SEND,           7).
+-define(CMD_ZSTR_RECV_NOWAIT,    8).
+-define(CMD_ZFRAME_RECV_NOWAIT,  9).
 
 %%%===================================================================
 %%% Start / init
@@ -59,35 +66,53 @@ port_exe() ->
 %%% API
 %%%===================================================================
 
-ping(C) ->
-    ping(C, ?DEFAULT_PING_TIMEOUT).
+ping(Ctx) ->
+    ping(Ctx, ?DEFAULT_PING_TIMEOUT).
 
-ping(C, Timeout) ->
-    gen_server:call(C, {?CMD_PING, {}}, Timeout).
+ping(Ctx, Timeout) ->
+    gen_server:call(Ctx, {?CMD_PING, {}}, Timeout).
 
-zsocket_new(C, Type) ->
-    gen_server:call(C, {?CMD_ZSOCKET_NEW, {Type}}, infinity).
+zsocket_new(Ctx, Type) ->
+    Socket = gen_server:call(Ctx, {?CMD_ZSOCKET_NEW, {Type}}, infinity),
+    bind_socket(Socket, Ctx).
 
-zsocket_type_str(C, Socket) ->
-    gen_server:call(C, {?CMD_ZSOCKET_TYPE_STR, {Socket}}, infinity).
+bind_socket(Socket, Ctx) -> {Ctx, Socket}.
 
-zsocket_bind(C, Socket, Endpoint) ->
-    gen_server:call(C, {?CMD_ZSOCKET_BIND, {Socket, Endpoint}}, infinity).
+zsocket_type_str({Ctx, Socket}) ->
+    gen_server:call(Ctx, {?CMD_ZSOCKET_TYPE_STR, {Socket}}, infinity).
 
-zsocket_connect(C, Socket, Endpoint) ->
-    gen_server:call(C, {?CMD_ZSOCKET_CONNECT, {Socket, Endpoint}}, infinity).
+zsocket_bind({Ctx, Socket}, Endpoint) ->
+    gen_server:call(Ctx, {?CMD_ZSOCKET_BIND, {Socket, Endpoint}}, infinity).
 
-zsocket_destroy(C, Socket) ->
-    gen_server:call(C, {?CMD_ZSOCKET_DESTROY, {Socket}}, infinity).
+zsocket_connect({Ctx, Socket}, Endpoint) ->
+    gen_server:call(Ctx, {?CMD_ZSOCKET_CONNECT, {Socket, Endpoint}}, infinity).
 
-zstr_send(C, Socket, Data) ->
-    gen_server:call(C, {?CMD_ZSTR_SEND, {Socket, Data}}, infinity).
+zsocket_sendmem(BoundSocket, Data) ->
+    zsocket_sendmem(BoundSocket, Data, 0).
 
-zstr_recv_nowait(C, Socket) ->
-    gen_server:call(C, {?CMD_ZSTR_RECV_NOWAIT, {Socket}}, infinity).
+zsocket_sendmem({Ctx, Socket}, Data, Flags) ->
+    DataBin = iolist_to_binary(Data),
+    gen_server:call(
+      Ctx, {?CMD_ZSOCKET_SENDMEM, {Socket, DataBin, Flags}}, infinity).
 
-terminate(C) ->
-    gen_server:call(C, terminate, infinity).
+zsocket_destroy({Ctx, Socket}) ->
+    gen_server:call(Ctx, {?CMD_ZSOCKET_DESTROY, {Socket}}, infinity).
+
+zstr_send({Ctx, Socket}, Data) ->
+    gen_server:call(Ctx, {?CMD_ZSTR_SEND, {Socket, Data}}, infinity).
+
+zstr_recv_nowait({Ctx, Socket}) ->
+    gen_server:call(Ctx, {?CMD_ZSTR_RECV_NOWAIT, {Socket}}, infinity).
+
+zframe_recv_nowait({Ctx, Socket}) ->
+    gen_server:call(Ctx, {?CMD_ZFRAME_RECV_NOWAIT, {Socket}}, infinity).
+
+zframe_data({Data, _More}) -> Data.
+
+zframe_more({_Data, More}) -> More.
+
+terminate(Ctx) ->
+    gen_server:call(Ctx, terminate, infinity).
 
 %%%===================================================================
 %%% Callbacks

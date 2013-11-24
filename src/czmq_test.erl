@@ -7,32 +7,34 @@
 -include("czmq.hrl").
 
 test() ->
-    {ok, C} = czmq:start_link(),
-    zstr_send_recv(C),
-    sendmem_framerecv(C),
-    czmq:terminate(C).
+    {ok, Ctx} = czmq:start_link(),
+    zstr_send_recv(Ctx),
+    sendmem_framerecv(Ctx),
+    czmq:terminate(Ctx).
 
 %%--------------------------------------------------------------------
 %% @doc Tests basic zstr send and receive.
 %% @end
 %%--------------------------------------------------------------------
 
-zstr_send_recv(C) ->
-    Writer = czmq:zsocket_new(C, ?ZMQ_PUSH),
-    {ok, Port} = czmq:zsocket_bind(C, Writer, "tcp://*:*"),
+zstr_send_recv(Ctx) ->
+    Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+    {ok, Port} = czmq:zsocket_bind(Writer, "tcp://*:*"),
 
-    Reader = czmq:zsocket_new(C, ?ZMQ_PULL),
-    ok = czmq:zsocket_connect(C, Reader, connect_endpoint(Port)),
+    Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+    ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
     Msg = "Watson, put on your shirt",
-    ok = czmq:zstr_send(C, Writer, Msg),
+    ok = czmq:zstr_send(Writer, Msg),
 
     timer:sleep(100),
 
-    {ok, Msg} = czmq:zstr_recv_nowait(C, Reader),
+    {ok, Msg} = czmq:zstr_recv_nowait(Reader),
 
-    czmq:zsocket_destroy(C, Writer),
-    czmq:zsocket_destroy(C, Reader).
+    error = czmq:zstr_recv_nowait(Reader),
+
+    czmq:zsocket_destroy(Writer),
+    czmq:zsocket_destroy(Reader).
 
 %%--------------------------------------------------------------------
 %% @doc Tests sendmem and frame receieves as per
@@ -40,67 +42,33 @@ zstr_send_recv(C) ->
 %% @end
 %%--------------------------------------------------------------------
 
-sendmem_framerecv(C) ->
-    Writer = czmq:zsocket_new(C, ?ZMQ_PUSH),
-    Reader = czmq:zsocket_new(C, ?ZMQ_PULL),
+sendmem_framerecv(Ctx) ->
+    Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+    "PUSH" = czmq:zsocket_type_str(Writer),
+    {ok, Port} = czmq:zsocket_bind(Writer, "tcp://*:*"),
 
-    "PUSH" = czmq:zsocket_type_str(C, Writer),
-    "PULL" = czmq:zsocket_type_str(C, Reader).
+    Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+    "PULL" = czmq:zsocket_type_str(Reader),
+    ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
-%%     int rc = zsocket_bind (writer, "tcp://%s:%d", interf, service);
-%%     assert (rc == service);
+    ok = czmq:zsocket_sendmem(Writer, "ABC", ?ZFRAME_MORE),
+    ok = czmq:zsocket_sendmem(Writer, "DEFG"),
 
-%% #if (ZMQ_VERSION >= ZMQ_MAKE_VERSION (3,2,0))
-%%     //  Check unbind
-%%     rc = zsocket_unbind (writer, "tcp://%s:%d", interf, service);
-%%     assert (rc == 0);
+    timer:sleep(100),
 
-%%     //  In some cases and especially when running under Valgrind, doing
-%%     //  a bind immediately after an unbind causes an EADDRINUSE error.
-%%     //  Even a short sleep allows the OS to release the port for reuse.
-%%     zclock_sleep (100);
+    {ok, Frame1} = czmq:zframe_recv_nowait(Reader),
 
-%%     //  Bind again
-%%     rc = zsocket_bind (writer, "tcp://%s:%d", interf, service);
-%%     assert (rc == service);
-%% #endif
+    <<"ABC">> = czmq:zframe_data(Frame1),
+    true = czmq:zframe_more(Frame1),
 
-%%     rc = zsocket_connect (reader, "tcp://%s:%d", domain, service);
-%%     assert (rc == 0);
-%%     zstr_send (writer, "HELLO");
-%%     char *message = zstr_recv (reader);
-%%     assert (message);
-%%     assert (streq (message, "HELLO"));
-%%     free (message);
+    {ok, Frame2} = czmq:zframe_recv_nowait(Reader),
+    <<"DEFG">> = czmq:zframe_data(Frame2),
+    false = czmq:zframe_more(Frame2),
 
-%%     //  Test binding to ports
-%%     int port = zsocket_bind (writer, "tcp://%s:*", interf);
-%%     assert (port >= ZSOCKET_DYNFROM && port <= ZSOCKET_DYNTO);
+    error = czmq:zframe_recv_nowait(Reader),
 
-%%     assert (zsocket_poll (writer, 100) == false);
-
-%%     rc = zsocket_connect (reader, "txp://%s:%d", domain, service);
-%%     assert (rc == -1);
-
-%%     //  Test sending frames to socket
-%%     rc = zsocket_sendmem (writer,"ABC", 3, ZFRAME_MORE);
-%%     assert (rc == 0);
-%%     rc = zsocket_sendmem (writer, "DEFG", 4, 0);
-%%     assert (rc == 0);
-
-%%     zframe_t *frame = zframe_recv (reader);
-%%     assert (frame);
-%%     assert (zframe_streq (frame, "ABC"));
-%%     assert (zframe_more (frame));
-%%     zframe_destroy (&frame);
-
-%%     frame = zframe_recv (reader);
-%%     assert (frame);
-%%     assert (zframe_streq (frame, "DEFG"));
-%%     assert (!zframe_more (frame));
-%%     zframe_destroy (&frame);
-
-%%     zsocket_destroy (ctx, writer); 
+    czmq:zsocket_destroy(Writer),
+    czmq:zsocket_destroy(Reader).
 
 connect_endpoint(Port) ->
     "tcp://localhost:" ++ integer_to_list(Port).

@@ -40,8 +40,6 @@
     assert(ERL_IS_TUPLE(term)); \
     assert(erl_size(term) == size)
 
-typedef unsigned char byte;
-
 typedef struct {
     byte reply_buf[REPLY_BUF_SIZE];
     zctx_t *ctx;
@@ -53,8 +51,11 @@ typedef void (*cmd_handler)(ETERM*, state*);
 ETERM *ETERM_CMD_PATTERN;
 ETERM *ETERM_OK;
 ETERM *ETERM_UNDEFINED;
+ETERM *ETERM_TRUE;
+ETERM *ETERM_FALSE;
 ETERM *ETERM_TODO;
 ETERM *ETERM_PONG;
+ETERM *ETERM_ERROR;
 ETERM *ETERM_ERROR_INVALID_SOCKET;
 ETERM *ETERM_ERROR_BIND_FAILED;
 ETERM *ETERM_ERROR_CONNECT_FAILED;
@@ -235,6 +236,30 @@ static void handle_zsocket_connect(ETERM *args, state *state) {
     erl_free(endpoint);
 }
 
+static void handle_zsocket_sendmem(ETERM *args, state *state) {
+    assert_tuple_size(args, 3);
+
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    ETERM *data_bin_arg = erl_element(2, args);
+    void *data_bin = ERL_BIN_PTR(data_bin_arg);
+    int data_bin_size = ERL_BIN_SIZE(data_bin_arg);
+
+    ETERM *flags_arg = erl_element(3, args);
+    int flags = ERL_INT_VALUE(flags_arg);
+
+    int rc = zsocket_sendmem(socket, data_bin, data_bin_size, flags);
+    if (rc == 0) {
+        write_term(ETERM_OK, state);
+    } else {
+        write_term(ETERM_ERROR, state);
+    }
+}
+
 static void handle_zsocket_destroy(ETERM *args, state *state) {
     assert_tuple_size(args, 1);
 
@@ -277,15 +302,53 @@ static void handle_zstr_recv_nowait(ETERM *args, state *state) {
     }
 
     char *data = zstr_recv_nowait(socket);
-    
-    if (data) {
-        ETERM *result = erl_format("{ok,~s}", data);
-        write_term(result, state);
-        erl_free_term(result);
-        free(data);
-    } else {
-        write_term(ETERM_UNDEFINED, state);
+
+    if (!data) {
+        write_term(ETERM_ERROR, state);
+        return;
     }
+
+    ETERM *result = erl_format("{ok,~s}", data);
+    write_term(result, state);
+
+    erl_free_term(result);
+    free(data);
+}
+
+static void handle_zframe_recv_nowait(ETERM *args, state *state) {
+    assert_tuple_size(args, 1);
+
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    zframe_t *frame = zframe_recv_nowait(socket);
+    if (!frame) {
+        write_term(ETERM_ERROR, state);
+        return;
+    }
+
+    size_t frame_size = zframe_size(frame);
+    byte *frame_data = zframe_data(frame);
+    ETERM *data_bin = erl_mk_binary((char*)frame_data, frame_size);
+
+    int more = zframe_more(frame);
+    ETERM *more_boolean;
+    if (more) {
+        more_boolean = ETERM_TRUE;
+    } else {
+        more_boolean = ETERM_FALSE;
+    }
+
+    ETERM *result = erl_format("{ok,{~w,~w}}", data_bin, more_boolean);
+    write_term(result, state);
+
+    zframe_destroy(&frame);
+    erl_free_term(data_bin);
+    erl_free_term(more_boolean);
+    erl_free_term(result);
 }
 
 static void handle_cmd(byte *buf, state *state, int handler_count,
@@ -314,16 +377,18 @@ static void handle_cmd(byte *buf, state *state, int handler_count,
 }
 
 static int loop(state *state) {
-    int HANDLER_COUNT = 8;
+    int HANDLER_COUNT = 10;
     cmd_handler handlers[HANDLER_COUNT];
     handlers[0] = &handle_ping;
     handlers[1] = &handle_zsocket_new;
     handlers[2] = &handle_zsocket_type_str;
     handlers[3] = &handle_zsocket_bind;
     handlers[4] = &handle_zsocket_connect;
-    handlers[5] = &handle_zsocket_destroy;
-    handlers[6] = &handle_zstr_send;
-    handlers[7] = &handle_zstr_recv_nowait;
+    handlers[5] = &handle_zsocket_sendmem;
+    handlers[6] = &handle_zsocket_destroy;
+    handlers[7] = &handle_zstr_send;
+    handlers[8] = &handle_zstr_recv_nowait;
+    handlers[9] = &handle_zframe_recv_nowait;
 
     int cmd_len;
     byte cmd_buf[CMD_BUF_SIZE];
@@ -350,10 +415,13 @@ static int test() {
 
 static void init_eterms() {
     ETERM_CMD_PATTERN = erl_format("{_,_}");
-    ETERM_OK = erl_format("ok");
-    ETERM_UNDEFINED = erl_format("undefined");
-    ETERM_TODO = erl_format("todo");
-    ETERM_PONG = erl_format("pong");
+    ETERM_OK = erl_mk_atom("ok");
+    ETERM_UNDEFINED = erl_mk_atom("undefined");
+    ETERM_TRUE = erl_mk_atom("true");
+    ETERM_FALSE = erl_mk_atom("false");
+    ETERM_TODO = erl_mk_atom("todo");
+    ETERM_PONG = erl_mk_atom("pong");
+    ETERM_ERROR = erl_mk_atom("error");
     ETERM_ERROR_INVALID_SOCKET = erl_format("{error,invalid_socket}");
     ETERM_ERROR_BIND_FAILED = erl_format("{error,bind_failed}");
     ETERM_ERROR_CONNECT_FAILED = erl_format("{error,connect_failed}");
