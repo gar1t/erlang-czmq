@@ -1,6 +1,6 @@
 -module(czmq_benchmark).
 
--export([start/0, start/1, recv/0, recv/1]).
+-export([start_recv/0, start_recv/1, stop/1, recv/0, recv/1]).
 
 -include("czmq.hrl").
 
@@ -10,10 +10,14 @@
 
 -record(options, {port, socket_type, poll_interval}).
 
-start() -> start([]).
+start_recv() -> start_recv([]).
 
-start(Options) ->
+start_recv(Options) ->
     spawn(fun() -> recv(Options) end).
+
+stop(P) ->
+    exit(P, shutdown),
+    ok.
 
 recv() -> recv([]).
 

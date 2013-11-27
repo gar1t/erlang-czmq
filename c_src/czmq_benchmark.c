@@ -88,19 +88,60 @@ static void send_messages(benchmark_options *options) {
 
     while (now < stop) {
         zstr_send(socket, msg);
-        usleep(100);
         now = now_ms();
     }
 
     free(msg);
-    // If the above loop is too tight (usleep < 100 generally) we can get
-    // Assertion failed: get_load () == 0 (poller_base.cpp:31) here.
+
+    sleep(1);
     zctx_destroy(&ctx);
 }
 
+static int recv_loop;
+
+static void stop_recv(int sig) {
+    recv_loop = 0;
+}
+
 static void recv_messages(benchmark_options *options) {
-    printf("Going to listen on %i for %i seconds\n",
-           options->port, options->time);
+    zctx_t *ctx = zctx_new();
+    assert (ctx);
+
+    void *socket = zsocket_new(ctx, options->socket_type);
+    assert(socket);
+    int rc = zsocket_bind(socket, "tcp://*:%i", options->port);
+    if (rc == -1) {
+        printf("Error binding to port %i\n", options->port);
+        exit(1);
+    }
+
+    long last_log = now_ms(), now;
+    int msg_count = 0;
+    char *msg;
+
+    recv_loop = 1;
+    signal(SIGINT, stop_recv);
+
+    while (recv_loop) {
+        now = now_ms();
+        if (now - last_log >= 1000) {
+            printf("%li %i\n", now, msg_count);
+            last_log = now;
+            msg_count = 0;
+        }
+        while (1) {
+            msg = zstr_recv_nowait(socket);
+            if (!msg) {
+                break;
+            }
+            msg_count++;
+            free(msg);
+        }
+        usleep(100);
+    }
+
+    sleep(1);
+    zctx_destroy(&ctx);
 }
 
 static int valid_port_range(int port) {
