@@ -74,8 +74,41 @@ process and terminate if either of those terminated.
 
 ## Simplest Possible Thing That Could Work
 
-``` erlang
-{ok, C} = czmq:start(),
+See src/czmq_test.erl for tests.
 
+## Performance
 
-```
+We should provide some comparison benchmarks on the performance of this binding
+versus the standard bindings here:
+
+    git clone git://github.com/zeromq/erlzmq2.git
+
+Here's what we should test:
+
+- Received messages per second for some message size
+- Delivered messages per second for some message size
+
+To remove language variances, we should use a C program to send and receive
+messages.
+
+### Test 1
+
+    Push (Erlang) -----> Pull (C)
+
+In this case, the C program would run in a blocking recv and track the number
+of messages received, printing a total an incremental count every second.
+
+### Test 2
+
+    Pull (Erlang) <----- Push (C)
+
+In this case, the Erlang program would run in a non blocking recv and track
+messages received, printing the total and incremental count every second.
+
+### Test 3
+
+We might also use a dealer / router pair to test a request/response exchange.
+
+      Dealer (Erlang) ----> Router (C)
+	        ^                  |
+            |__________________|

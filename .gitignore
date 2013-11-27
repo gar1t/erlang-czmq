@@ -3,4 +3,5 @@
 *.beam
 *.bak
 ebin
-priv/czmq_port
+priv/czmq-port
+priv/czmq-benchmark

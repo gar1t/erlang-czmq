@@ -1,5 +1,8 @@
 // vector.h
 
+#ifndef __VECTOR_H_INCLUDED__
+#define __VECTOR_H_INCLUDED__
+
 #define VECTOR_INITIAL_CAPACITY 100;
 
 typedef struct {
@@ -19,3 +22,5 @@ void vector_set(vector *v, int index, void *value);
 void vector_free(vector *v);
 
 void vector_test();
+
+#endif

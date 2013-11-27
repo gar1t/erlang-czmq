@@ -60,7 +60,7 @@ start_port() ->
 
 port_exe() ->
     EbinDir = filename:dirname(code:which(?MODULE)),
-    filename:join([EbinDir, "..", "priv", "czmq_port"]).
+    filename:join([EbinDir, "..", "priv", "czmq-port"]).
 
 %%%===================================================================
 %%% API
