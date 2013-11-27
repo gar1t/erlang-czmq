@@ -28,10 +28,10 @@
 #define default_recv_socket_type ZMQ_PULL;
 
 typedef struct {
-    int port;
-    int time;
+    uint port;
+    uint time;
     int socket_type;
-    int msg_size;
+    ulong msg_size;
 } benchmark_options;
 
 static void print_usage() {
@@ -44,20 +44,24 @@ static void print_usage() {
     printf("Options:\n");
     printf("  -p PORT      port to send to / listen on (default is %i)\n",
            default_port);
-    printf("  -t TIME      seconds to send / listen for (default is %i)\n",
+    printf("  -t TIME      seconds to sendfor (default is %i)\n",
            default_time);
+    printf("  -s MSG_SIZE  message size in bytes (default is %i)\n",
+           default_msg_size);
     printf("  -h           print this message and exit\n");
 }
 
 static char rand_char() {
     // printable ascii range: 32 - 126 (94 chars)
-    int rand94 = 94 * (rand() / (RAND_MAX + 1.0));
-    return (char)(32 + rand94);
+    //int rand94 = 94 * (rand() / (RAND_MAX + 1.0));
+    //return (char)(32 + rand94);
+    return '!';   // temp simplification to work around segfault 
+                  // for large strings (related to getting string len)
 }
 
-static char *create_message(int size) {
+static char *create_message(ulong size) {
     char *msg = malloc(size + 1);
-    int i;
+    ulong i;
     for (i = 0; i < size; i++) {
         msg[i] = rand_char();
     }
@@ -144,20 +148,13 @@ static void recv_messages(benchmark_options *options) {
     zctx_destroy(&ctx);
 }
 
-static int valid_port_range(int port) {
-    return port > 0 && port <= 65535;
-}
-
-static int valid_time(int time) {
-    return time > 0;
-}
-
 int main(int argc, char *argv[]) {
     char *port_arg = NULL;
     char *time_arg = NULL;
+    char *msg_size_arg = NULL;
     int c;
 
-    while ((c = getopt (argc, argv, "hp:t:")) != -1)
+    while ((c = getopt (argc, argv, "hp:t:s:")) != -1)
         switch (c)
             {
             case 'h':
@@ -168,6 +165,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 't':
                 time_arg = optarg;
+                break;
+            case 's':
+                msg_size_arg = optarg;
                 break;
             default:
                 print_usage();
@@ -182,12 +182,12 @@ int main(int argc, char *argv[]) {
     char *cmd_arg = argv[optind];
 
     benchmark_options options;
-    int int_val;
+    uint int_val;
+    ulong long_val;
 
     // port
     if (port_arg) {
-        if (sscanf(port_arg, "%d", &int_val) != 1 ||
-            !valid_port_range(int_val)) {
+        if (sscanf(port_arg, "%u", &int_val) != 1) {
             printf("Invalid port value %s\n", port_arg);
             return 1;
         }
@@ -198,8 +198,7 @@ int main(int argc, char *argv[]) {
 
     // time
     if (time_arg) {
-        if (sscanf(time_arg, "%d", &int_val) != 1 ||
-            !valid_time(int_val)) {
+        if (sscanf(time_arg, "%u", &int_val) != 1) {
             printf("Invalid time value %s\n", time_arg);
             return 1;
         }
@@ -209,7 +208,15 @@ int main(int argc, char *argv[]) {
     }
 
     // msg_size
-    options.msg_size = default_msg_size;
+    if (msg_size_arg) {
+        if (sscanf(msg_size_arg, "%lu", &long_val) != 1) {
+            printf("Invalid msg size value %s\n", msg_size_arg);
+            return 1;
+        }
+        options.msg_size = long_val;
+    } else {
+        options.msg_size = default_msg_size;
+    }
 
     if (strcmp(cmd_arg, "send") == 0) {
         options.socket_type = default_send_socket_type;
