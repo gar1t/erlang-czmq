@@ -10,6 +10,7 @@ typedef struct {
     byte reply_buf[ERL_CZMQ_REPLY_BUF_SIZE];
     zctx_t *ctx;
     vector sockets;
+    zauth_t *auth;
 } erl_czmq_state;
 
 void erl_czmq_init(erl_czmq_state *state);

@@ -11,11 +11,20 @@
          zsocket_sendmem/2,
          zsocket_sendmem/3,
          zsocket_destroy/1,
+         zsocket_set_zap_domain/2,
+         zsocket_set_plain_server/2,
+         zsocket_set_plain_username/2,
+         zsocket_set_plain_password/2,
          zstr_send/2,
          zstr_recv_nowait/1,
          zframe_recv_nowait/1,
          zframe_data/1,
          zframe_more/1,
+         zauth_new/1,
+         zauth_deny/2,
+         zauth_allow/2,
+         zauth_configure_plain/3,
+         zauth_destroy/1,
          terminate/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -29,16 +38,29 @@
 -define(MSG_TIMEOUT, 1000).
 
 %% These *must* correspond to the handlers in czmq_port.c
--define(CMD_PING,                0).
--define(CMD_ZSOCKET_NEW,         1).
--define(CMD_ZSOCKET_TYPE_STR,    2).
--define(CMD_ZSOCKET_BIND,        3).
--define(CMD_ZSOCKET_CONNECT,     4).
--define(CMD_ZSOCKET_SENDMEM,     5).
--define(CMD_ZSOCKET_DESTROY,     6).
--define(CMD_ZSTR_SEND,           7).
--define(CMD_ZSTR_RECV_NOWAIT,    8).
--define(CMD_ZFRAME_RECV_NOWAIT,  9).
+-define(CMD_PING,                    0).
+-define(CMD_ZSOCKET_NEW,             1).
+-define(CMD_ZSOCKET_TYPE_STR,        2).
+-define(CMD_ZSOCKET_BIND,            3).
+-define(CMD_ZSOCKET_CONNECT,         4).
+-define(CMD_ZSOCKET_SENDMEM,         5).
+-define(CMD_ZSOCKET_DESTROY,         6).
+-define(CMD_ZSOCKOPT_SET_STR,        7).
+-define(CMD_ZSOCKOPT_SET_INT,        8).
+-define(CMD_ZSTR_SEND,               9).
+-define(CMD_ZSTR_RECV_NOWAIT,       10).
+-define(CMD_ZFRAME_RECV_NOWAIT,     11).
+-define(CMD_ZAUTH_NEW,              12).
+-define(CMD_ZAUTH_DENY,             13).
+-define(CMD_ZAUTH_ALLOW,            14).
+-define(CMD_ZAUTH_CONFIGURE_PLAIN,  15).
+-define(CMD_ZAUTH_DESTROY,          16).
+
+%% These *must* correspond to the ZSOCKOPT_XXX definitions in czmq_port.c
+-define(ZSOCKOPT_ZAP_DOMAIN, 0).
+-define(ZSOCKOPT_PLAIN_SERVER, 1).
+-define(ZSOCKOPT_PLAIN_USERNAME, 2).
+-define(ZSOCKOPT_PLAIN_PASSWORD, 3).
 
 %%%===================================================================
 %%% Start / init
@@ -74,9 +96,9 @@ ping(Ctx, Timeout) ->
 
 zsocket_new(Ctx, Type) ->
     Socket = gen_server:call(Ctx, {?CMD_ZSOCKET_NEW, {Type}}, infinity),
-    bind_socket(Socket, Ctx).
+    bound_socket(Socket, Ctx).
 
-bind_socket(Socket, Ctx) -> {Ctx, Socket}.
+bound_socket(Socket, Ctx) -> {Ctx, Socket}.
 
 zsocket_type_str({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZSOCKET_TYPE_STR, {Socket}}, infinity).
@@ -98,6 +120,25 @@ zsocket_sendmem({Ctx, Socket}, Data, Flags) ->
 zsocket_destroy({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZSOCKET_DESTROY, {Socket}}, infinity).
 
+zsocket_set_zap_domain({Ctx, Socket}, Domain) ->
+    Args = {Socket, ?ZSOCKOPT_ZAP_DOMAIN, Domain},
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
+
+zsocket_set_plain_server({Ctx, Socket}, Flag) ->
+    Args = {Socket, ?ZSOCKOPT_PLAIN_SERVER, bool_to_int(Flag)},
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_INT, Args}, infinity).
+
+bool_to_int(true) -> 1;
+bool_to_int(false) -> 0.
+
+zsocket_set_plain_username({Ctx, Socket}, Username) ->
+    Args = {Socket, ?ZSOCKOPT_PLAIN_USERNAME, Username},
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
+
+zsocket_set_plain_password({Ctx, Socket}, Password) ->
+    Args = {Socket, ?ZSOCKOPT_PLAIN_PASSWORD, Password},
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
+
 zstr_send({Ctx, Socket}, Data) ->
     gen_server:call(Ctx, {?CMD_ZSTR_SEND, {Socket, Data}}, infinity).
 
@@ -110,6 +151,25 @@ zframe_recv_nowait({Ctx, Socket}) ->
 zframe_data({Data, _More}) -> Data.
 
 zframe_more({_Data, More}) -> More.
+
+zauth_new(Ctx) ->
+    Auth = gen_server:call(Ctx, {?CMD_ZAUTH_NEW, {}}, infinity),
+    bound_auth(Auth, Ctx).
+
+bound_auth(Auth, Ctx) -> {Ctx, Auth}.
+
+zauth_deny({Ctx, Auth}, Addr) ->
+    gen_server:call(Ctx, {?CMD_ZAUTH_DENY, {Auth, Addr}}, infinity).
+
+zauth_allow({Ctx, Auth}, Addr) ->
+    gen_server:call(Ctx, {?CMD_ZAUTH_ALLOW, {Auth, Addr}}, infinity).
+
+zauth_configure_plain({Ctx, Auth}, Domain, PwdFile) ->
+    gen_server:call(
+      Ctx, {?CMD_ZAUTH_CONFIGURE_PLAIN, {Auth, Domain, PwdFile}}).
+
+zauth_destroy({Ctx, Auth}) ->
+    gen_server:call(Ctx, {?CMD_ZAUTH_DESTROY, {Auth}}, infinity).
 
 terminate(Ctx) ->
     gen_server:call(Ctx, terminate, infinity).
