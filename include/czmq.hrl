@@ -14,3 +14,5 @@
 -define(ZFRAME_MORE, 1).
 -define(ZFRAME_REUSE, 2).
 -define(ZFRAME_DONTWAIT, 4).
+
+-define(CURVE_ALLOW_ANY, "*").

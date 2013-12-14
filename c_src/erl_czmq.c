@@ -30,11 +30,14 @@ ETERM *ETERM_ERROR_INVALID_SOCKET;
 ETERM *ETERM_ERROR_BIND_FAILED;
 ETERM *ETERM_ERROR_CONNECT_FAILED;
 ETERM *ETERM_ERROR_INVALID_AUTH;
+ETERM *ETERM_ERROR_INVALID_CERT;
 
 #define ZSOCKOPT_ZAP_DOMAIN 0
 #define ZSOCKOPT_PLAIN_SERVER 1
 #define ZSOCKOPT_PLAIN_USERNAME 2
 #define ZSOCKOPT_PLAIN_PASSWORD 3
+#define ZSOCKOPT_CURVE_SERVER 4
+#define ZSOCKOPT_CURVE_SERVERKEY 5
 
 #define SUCCESS 0
 
@@ -45,6 +48,7 @@ ETERM *ETERM_ERROR_INVALID_AUTH;
 #define CMD_BUF_SIZE 10240
 
 #define MAX_SOCKETS 999999
+#define MAX_CERTS 999999
 
 #define assert_tuple_size(term, size) \
     assert(ERL_IS_TUPLE(term)); \
@@ -125,46 +129,7 @@ static void write_term(ETERM *term, erl_czmq_state *state) {
     write_cmd(state->reply_buf, len);
 }
 
-static bool
-s_can_connect (zctx_t *ctx, void **server, void **client)
-{
-    int port_nbr = zsocket_bind (*server, "tcp://127.0.0.1:*");
-    assert (port_nbr > 0);
-    int rc = zsocket_connect (*client, "tcp://127.0.0.1:%d", port_nbr);
-    assert (rc == 0);
-    zstr_send (*server, "Hello, World");
-    zpoller_t *poller = zpoller_new (*client, NULL);
-    bool success = (zpoller_wait (poller, 200) == *client);
-    zpoller_destroy (&poller);
-    zsocket_destroy (ctx, *client);
-    zsocket_destroy (ctx, *server);
-    *server = zsocket_new (ctx, ZMQ_PUSH);
-    *client = zsocket_new (ctx, ZMQ_PULL);
-    return success;
-}
-
 static void handle_ping(ETERM *args, erl_czmq_state *state) {
-#   define TESTDIR "/tmp"
-
-    FILE *password = fopen (TESTDIR "/password-file", "w");
-    assert (password);
-    fprintf (password, "admin=Password\n");
-    fclose (password);
-
-    zctx_t *ctx = state->ctx;
-
-    zauth_t *auth = zauth_new(ctx);
-    zauth_configure_plain (auth, "*", TESTDIR "/password-file");
-
-    void *server = zsocket_new (ctx, ZMQ_PUSH);
-    void *client = zsocket_new (ctx, ZMQ_PULL);
-
-    zsocket_set_plain_server (server, 1);
-    zsocket_set_plain_username (client, "admin");
-    zsocket_set_plain_password (client, "Password");
-    int success = s_can_connect (ctx, &server, &client);
-    assert (success);
-
     write_term(ETERM_PONG, state);
 }
 
@@ -193,14 +158,12 @@ static void handle_zsocket_new(ETERM *args, erl_czmq_state *state) {
     erl_free_term(index_term);
 }
 
-static void *get_socket(int index, erl_czmq_state *state) {
-    return vector_get(&state->sockets, index);
+static int int_arg(ETERM *args, int arg_pos) {
+    return ERL_INT_VALUE(erl_element(arg_pos, args));
 }
 
 static void *socket_from_arg(ETERM *args, int arg_pos, erl_czmq_state *state) {
-    ETERM *socket_arg = erl_element(arg_pos, args);
-    int socket_index = ERL_INT_VALUE(socket_arg);
-    return get_socket(socket_index, state);
+    return vector_get(&state->sockets, int_arg(args, arg_pos));
 }
 
 static void handle_zsocket_type_str(ETERM *args, erl_czmq_state *state) {
@@ -290,6 +253,10 @@ static void handle_zsocket_sendmem(ETERM *args, erl_czmq_state *state) {
     }
 }
 
+static void clear_socket(int socket_index, erl_czmq_state *state) {
+    vector_set(&state->sockets, socket_index, NULL);
+}
+
 static void handle_zsocket_destroy(ETERM *args, erl_czmq_state *state) {
     assert_tuple_size(args, 1);
 
@@ -300,6 +267,7 @@ static void handle_zsocket_destroy(ETERM *args, erl_czmq_state *state) {
     }
 
     zsocket_destroy(state->ctx, socket);
+    clear_socket(int_arg(args, 1), state);
 
     write_term(ETERM_OK, state);
 }
@@ -316,18 +284,21 @@ static void handle_zsockopt_set_str(ETERM *args, erl_czmq_state *state) {
     ETERM *opt_arg = erl_element(2, args);
     int opt = ERL_INT_VALUE(opt_arg);
 
-    ETERM *str_arg = erl_element(3, args);
-    char *str = erl_iolist_to_string(str_arg);
+    ETERM *val_arg = erl_element(3, args);
+    char *val = erl_iolist_to_string(val_arg);
 
     switch(opt) {
     case ZSOCKOPT_ZAP_DOMAIN:
-        zsocket_set_zap_domain(socket, str);
+        zsocket_set_zap_domain(socket, val);
         break;
     case ZSOCKOPT_PLAIN_USERNAME:
-        zsocket_set_plain_username(socket, str);
+        zsocket_set_plain_username(socket, val);
         break;
     case ZSOCKOPT_PLAIN_PASSWORD:
-        zsocket_set_plain_password(socket, str);
+        zsocket_set_plain_password(socket, val);
+        break;
+    case ZSOCKOPT_CURVE_SERVERKEY:
+        zsocket_set_curve_serverkey(socket, val);
         break;
     default:
         assert(0);
@@ -335,7 +306,7 @@ static void handle_zsockopt_set_str(ETERM *args, erl_czmq_state *state) {
 
     write_term(ETERM_OK, state);
 
-    erl_free(str);
+    erl_free(val);
 }
 
 static void handle_zsockopt_set_int(ETERM *args, erl_czmq_state *state) {
@@ -350,12 +321,15 @@ static void handle_zsockopt_set_int(ETERM *args, erl_czmq_state *state) {
     ETERM *opt_arg = erl_element(2, args);
     int opt = ERL_INT_VALUE(opt_arg);
 
-    ETERM *int_arg = erl_element(3, args);
-    int i = ERL_INT_VALUE(int_arg);
+    ETERM *val_arg = erl_element(3, args);
+    int val = ERL_INT_VALUE(val_arg);
 
     switch(opt) {
     case ZSOCKOPT_PLAIN_SERVER:
-        zsocket_set_plain_server(socket, i);
+        zsocket_set_plain_server(socket, val);
+        break;
+    case ZSOCKOPT_CURVE_SERVER:
+        zsocket_set_curve_server(socket, val);
         break;
     default:
         assert(0);
@@ -470,25 +444,6 @@ static zauth_t *auth_from_arg(ETERM *args, int arg_pos,
     }
 }
 
-static void clear_auth(erl_czmq_state *state) {
-    state->auth = NULL;
-}
-
-static void handle_zauth_destroy(ETERM *args, erl_czmq_state *state) {
-    assert_tuple_size(args, 1);
-
-    zauth_t *auth = auth_from_arg(args, 1, state);
-    if (!auth) {
-        write_term(ETERM_ERROR_INVALID_AUTH, state);
-        return;
-    }
-
-    zauth_destroy(&auth);
-    clear_auth(state);
-
-    write_term(ETERM_OK, state);
-}
-
 static void handle_zauth_deny(ETERM *args, erl_czmq_state *state) {
     assert_tuple_size(args, 2);
 
@@ -548,6 +503,152 @@ static void handle_zauth_configure_plain(ETERM *args, erl_czmq_state *state) {
     erl_free(pwd_file);
 }
 
+static void handle_zauth_configure_curve(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 3);
+
+    zauth_t *auth = auth_from_arg(args, 1, state);
+    if (!auth) {
+        write_term(ETERM_ERROR_INVALID_AUTH, state);
+        return;
+    }
+
+    ETERM *domain_arg = erl_element(2, args);
+    char *domain = erl_iolist_to_string(domain_arg);
+
+    ETERM *location_arg = erl_element(3, args);
+    char *location = erl_iolist_to_string(location_arg);
+
+    zauth_configure_curve(auth, domain, location);
+
+    write_term(ETERM_OK, state);
+
+    erl_free(domain);
+    erl_free(location);
+}
+
+static void clear_auth(erl_czmq_state *state) {
+    state->auth = NULL;
+}
+
+static void handle_zauth_destroy(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 1);
+
+    zauth_t *auth = auth_from_arg(args, 1, state);
+    if (!auth) {
+        write_term(ETERM_ERROR_INVALID_AUTH, state);
+        return;
+    }
+
+    zauth_destroy(&auth);
+    clear_auth(state);
+
+    write_term(ETERM_OK, state);
+}
+
+static int save_cert(void *cert, erl_czmq_state *state) {
+    int i;
+    for (i = 0; i < MAX_CERTS; i++) {
+        if (!vector_get(&state->certs, i)) {
+            vector_set(&state->certs, i, cert);
+            return i;
+        }
+    }
+    assert(0);
+}
+
+static void handle_zcert_new(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 0);
+
+    zcert_t *cert = zcert_new();
+    assert(cert);
+
+    int index = save_cert(cert, state);
+    ETERM *index_term = erl_mk_int(index);
+    write_term(index_term, state);
+    erl_free_term(index_term);
+}
+
+static zcert_t *cert_from_arg(ETERM *args, int arg_pos,
+                               erl_czmq_state *state) {
+    return vector_get(&state->certs, int_arg(args, arg_pos));
+}
+
+static void handle_zcert_apply(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 2);
+
+    zcert_t *cert = cert_from_arg(args, 1, state);
+    if (!cert) {
+        write_term(ETERM_ERROR_INVALID_CERT, state);
+        return;
+    }
+
+    void *socket = socket_from_arg(args, 2, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    zcert_apply(cert, socket);
+
+    write_term(ETERM_OK, state);
+}
+
+static void handle_zcert_public_txt(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 1);
+
+    zcert_t *cert = cert_from_arg(args, 1, state);
+    if (!cert) {
+        write_term(ETERM_ERROR_INVALID_CERT, state);
+        return;
+    }
+
+    char *txt = zcert_public_txt(cert);
+    assert(txt);
+
+    ETERM *result = erl_format("{ok,~s}", txt);
+    write_term(result, state);
+
+    erl_free_term(result);
+}
+
+static void handle_zcert_save_public(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 2);
+
+    void *cert = cert_from_arg(args, 1, state);
+    if (!cert) {
+        write_term(ETERM_ERROR_INVALID_CERT, state);
+        return;
+    }
+
+    ETERM *file_arg = erl_element(2, args);
+    char *file = erl_iolist_to_string(file_arg);
+
+    zcert_save_public(cert, file);
+
+    write_term(ETERM_OK, state);
+
+    erl_free(file);
+}
+
+static void clear_cert(int cert_index, erl_czmq_state *state) {
+    vector_set(&state->certs, cert_index, NULL);
+}
+
+static void handle_zcert_destroy(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 1);
+
+    zcert_t *cert = cert_from_arg(args, 1, state);
+    if (!cert) {
+        write_term(ETERM_ERROR_INVALID_CERT, state);
+        return;
+    }
+
+    zcert_destroy(&cert);
+    clear_cert(int_arg(args, 1), state);
+
+    write_term(ETERM_OK, state);
+}
+
 static void handle_cmd(byte *buf, erl_czmq_state *state, int handler_count,
                        cmd_handler *handlers) {
     ETERM *cmd_term = erl_decode(buf);
@@ -586,6 +687,7 @@ static void init_eterms() {
     ETERM_ERROR_BIND_FAILED = erl_format("{error,bind_failed}");
     ETERM_ERROR_CONNECT_FAILED = erl_format("{error,connect_failed}");
     ETERM_ERROR_INVALID_AUTH = erl_format("{error,invalid_auth}");
+    ETERM_ERROR_INVALID_CERT = erl_format("{error,invalid_cert}");
 }
 
 void erl_czmq_init(erl_czmq_state *state) {
@@ -595,10 +697,11 @@ void erl_czmq_init(erl_czmq_state *state) {
     assert(state->ctx);
     vector_init(&state->sockets);
     state->auth = NULL;
+    vector_init(&state->certs);
 }
 
 int erl_czmq_loop(erl_czmq_state *state) {
-    int HANDLER_COUNT = 17;
+    int HANDLER_COUNT = 23;
     cmd_handler handlers[HANDLER_COUNT];
     handlers[0] = &handle_ping;
     handlers[1] = &handle_zsocket_new;
@@ -616,7 +719,13 @@ int erl_czmq_loop(erl_czmq_state *state) {
     handlers[13] = &handle_zauth_deny;
     handlers[14] = &handle_zauth_allow;
     handlers[15] = &handle_zauth_configure_plain;
-    handlers[16] = &handle_zauth_destroy;
+    handlers[16] = &handle_zauth_configure_curve;
+    handlers[17] = &handle_zauth_destroy;
+    handlers[18] = &handle_zcert_new;
+    handlers[19] = &handle_zcert_apply;
+    handlers[20] = &handle_zcert_public_txt;
+    handlers[21] = &handle_zcert_save_public;
+    handlers[22] = &handle_zcert_destroy;
 
     int cmd_len;
     byte cmd_buf[CMD_BUF_SIZE];

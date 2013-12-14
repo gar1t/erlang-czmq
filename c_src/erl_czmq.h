@@ -11,6 +11,7 @@ typedef struct {
     zctx_t *ctx;
     vector sockets;
     zauth_t *auth;
+    vector certs;
 } erl_czmq_state;
 
 void erl_czmq_init(erl_czmq_state *state);

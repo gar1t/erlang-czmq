@@ -112,12 +112,12 @@ zauth_test(Ctx) ->
                 end
         end,
 
-    %% Without server config, all clients are denied.
+    %% Without authentication configured, all clients are denied.
     false = client_server_can_connect(Ctx, PlainConfig("admin", "Password")),
 
     %% Write a password file.
     TmpDir = create_tmp_dir(),
-    PwdFile = password_file(TmpDir),
+    PwdFile = filename:join(TmpDir, "password-file"),
     write_password_file(PwdFile, [{"admin", "Password"}]),
 
     %% With server config only matching credentials are allowed.
@@ -125,6 +125,50 @@ zauth_test(Ctx) ->
     true = client_server_can_connect(Ctx, PlainConfig("admin", "Password")),
     false = client_server_can_connect(Ctx, PlainConfig("admin", "Bogus")),
 
+    %% CURVE authentication
+    ServerCert = czmq:zcert_new(Ctx),
+    ClientCert = czmq:zcert_new(Ctx),
+
+    CurveConfig =
+        fun(Client, Server) ->
+                %% Server config
+                czmq:zcert_apply(ServerCert, Server),
+                czmq:zsocket_set_curve_server(Server, true),
+
+                %% Client config
+                czmq:zcert_apply(ClientCert, Client),
+                {ok, ServerKey} = czmq:zcert_public_txt(ServerCert),
+                czmq:zsocket_set_curve_serverkey(Client, ServerKey)
+        end,
+
+    %% Without authentication configured, all clients are denied.
+    false = client_server_can_connect(Ctx, CurveConfig),
+
+    %% Configure curve to allow any
+    czmq:zauth_configure_curve(Auth, "*", ?CURVE_ALLOW_ANY),
+    true = client_server_can_connect(Ctx, CurveConfig),
+
+    %% Specifying a location with no valid certs, clients are defined.
+    czmq:zauth_configure_curve(Auth, "*", TmpDir),
+    false = client_server_can_connect(Ctx, CurveConfig),
+
+    %% Location with a valid cert, client is allowed.
+    ClientCertFile = filename:join(TmpDir, "mycert.txt"),
+    czmq:zcert_save_public(ClientCert, ClientCertFile),
+    true = client_server_can_connect(Ctx, CurveConfig),
+
+    %% Remove valid cert, client is once again denied.
+    delete_file(ClientCertFile),
+    false = client_server_can_connect(Ctx, CurveConfig),
+
+    czmq:zcert_destroy(ServerCert),
+    czmq:zcert_destroy(ClientCert),
+
+    %% Remove authentication - clients are allowed.
+    czmq:zauth_destroy(Auth),
+    true = client_server_can_connect(Ctx, NullConfig),
+
+    %% Cleanup
     delete_dir(TmpDir),
     czmq:zauth_destroy(Auth).
 
@@ -135,11 +179,11 @@ create_tmp_dir() ->
 handle_make_dir(ok, Dir) -> Dir;
 handle_make_dir({error, eexist}, Dir) -> Dir.
 
-password_file(Dir) ->
-    filename:join(Dir, "password-file").
-
 delete_dir(Dir) when Dir /= "/" ->
     "" = os:cmd("rm -rf " ++ Dir).
+
+delete_file(File) ->
+    "" = os:cmd("rm " ++ File).
 
 write_password_file(File, Creds) ->
     Bytes = [[User, "=", Pwd, "\n"] || {User, Pwd} <- Creds],

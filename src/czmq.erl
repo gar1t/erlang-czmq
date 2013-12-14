@@ -15,6 +15,8 @@
          zsocket_set_plain_server/2,
          zsocket_set_plain_username/2,
          zsocket_set_plain_password/2,
+         zsocket_set_curve_server/2,
+         zsocket_set_curve_serverkey/2,
          zstr_send/2,
          zstr_recv_nowait/1,
          zframe_recv_nowait/1,
@@ -24,7 +26,13 @@
          zauth_deny/2,
          zauth_allow/2,
          zauth_configure_plain/3,
+         zauth_configure_curve/3,
          zauth_destroy/1,
+         zcert_new/1,
+         zcert_apply/2,
+         zcert_public_txt/1,
+         zcert_save_public/2,
+         zcert_destroy/1,
          terminate/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -54,13 +62,21 @@
 -define(CMD_ZAUTH_DENY,             13).
 -define(CMD_ZAUTH_ALLOW,            14).
 -define(CMD_ZAUTH_CONFIGURE_PLAIN,  15).
--define(CMD_ZAUTH_DESTROY,          16).
+-define(CMD_ZAUTH_CONFIGURE_CURVE,  16).
+-define(CMD_ZAUTH_DESTROY,          17).
+-define(CMD_ZCERT_NEW,              18).
+-define(CMD_ZCERT_APPLY,            19).
+-define(CMD_ZCERT_PUBLIC_TXT,       20).
+-define(CMD_ZCERT_SAVE_PUBLIC,      21).
+-define(CMD_ZCERT_DESTROY,          22).
 
 %% These *must* correspond to the ZSOCKOPT_XXX definitions in czmq_port.c
 -define(ZSOCKOPT_ZAP_DOMAIN, 0).
 -define(ZSOCKOPT_PLAIN_SERVER, 1).
 -define(ZSOCKOPT_PLAIN_USERNAME, 2).
 -define(ZSOCKOPT_PLAIN_PASSWORD, 3).
+-define(ZSOCKOPT_CURVE_SERVER, 4).
+-define(ZSOCKOPT_CURVE_SERVERKEY, 5).
 
 %%%===================================================================
 %%% Start / init
@@ -139,6 +155,14 @@ zsocket_set_plain_password({Ctx, Socket}, Password) ->
     Args = {Socket, ?ZSOCKOPT_PLAIN_PASSWORD, Password},
     gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
 
+zsocket_set_curve_server({Ctx, Socket}, Flag) ->
+    Args = {Socket, ?ZSOCKOPT_CURVE_SERVER, bool_to_int(Flag)},
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_INT, Args}, infinity).
+
+zsocket_set_curve_serverkey({Ctx, Socket}, Key) when is_list(Key) ->
+    Args = {Socket, ?ZSOCKOPT_CURVE_SERVERKEY, Key},
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
+
 zstr_send({Ctx, Socket}, Data) ->
     gen_server:call(Ctx, {?CMD_ZSTR_SEND, {Socket, Data}}, infinity).
 
@@ -168,8 +192,30 @@ zauth_configure_plain({Ctx, Auth}, Domain, PwdFile) ->
     gen_server:call(
       Ctx, {?CMD_ZAUTH_CONFIGURE_PLAIN, {Auth, Domain, PwdFile}}).
 
+zauth_configure_curve({Ctx, Auth}, Domain, Location) ->
+    gen_server:call(
+      Ctx, {?CMD_ZAUTH_CONFIGURE_CURVE, {Auth, Domain, Location}}).
+
 zauth_destroy({Ctx, Auth}) ->
     gen_server:call(Ctx, {?CMD_ZAUTH_DESTROY, {Auth}}, infinity).
+
+zcert_new(Ctx) ->
+    Cert = gen_server:call(Ctx, {?CMD_ZCERT_NEW, {}}, infinity),
+    bound_cert(Cert, Ctx).
+
+zcert_apply({Ctx, Cert}, {Ctx, Socket}) ->
+    gen_server:call(Ctx, {?CMD_ZCERT_APPLY, {Cert, Socket}}, infinity).
+
+zcert_public_txt({Ctx, Cert}) ->
+    gen_server:call(Ctx, {?CMD_ZCERT_PUBLIC_TXT, {Cert}}, infinity).
+
+zcert_save_public({Ctx, Cert}, File) ->
+    gen_server:call(Ctx, {?CMD_ZCERT_SAVE_PUBLIC, {Cert, File}}, infinity).
+
+zcert_destroy({Ctx, Cert}) ->
+    gen_server:call(Ctx, {?CMD_ZCERT_DESTROY, {Cert}}, infinity).
+
+bound_cert(Cert, Ctx) -> {Ctx, Cert}.
 
 terminate(Ctx) ->
     gen_server:call(Ctx, terminate, infinity).
