@@ -33,6 +33,9 @@
          zcert_public_txt/1,
          zcert_save_public/2,
          zcert_destroy/1,
+         subscribe/1, subscribe/2,
+         subscribe_link/1, subscribe_link/2,
+         unsubscribe/1,
          terminate/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -216,6 +219,19 @@ zcert_destroy({Ctx, Cert}) ->
     gen_server:call(Ctx, {?CMD_ZCERT_DESTROY, {Cert}}, infinity).
 
 bound_cert(Cert, Ctx) -> {Ctx, Cert}.
+
+subscribe(Socket) -> subscribe(Socket, []).
+
+subscribe({Ctx, _}=Socket, Options) ->
+    czmq_poller:start(Socket, Ctx, Options).
+
+subscribe_link(Socket) -> subscribe_link(Socket, []).
+
+subscribe_link({Ctx, _}=Socket, Options) ->
+    czmq_poller:start_link(Socket, Ctx, Options).
+
+unsubscribe(Poller) ->
+    czmq_poller:stop(Poller).
 
 terminate(Ctx) ->
     gen_server:call(Ctx, terminate, infinity).

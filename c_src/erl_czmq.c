@@ -18,12 +18,10 @@
 #include "erl_interface.h"
 #include "erl_czmq.h"
 
-ETERM *ETERM_CMD_PATTERN;
 ETERM *ETERM_OK;
 ETERM *ETERM_UNDEFINED;
 ETERM *ETERM_TRUE;
 ETERM *ETERM_FALSE;
-ETERM *ETERM_TODO;
 ETERM *ETERM_PONG;
 ETERM *ETERM_ERROR;
 ETERM *ETERM_ERROR_INVALID_SOCKET;
@@ -109,7 +107,6 @@ static int write_cmd(byte *buf, int len)
 
 static int safe_erl_encode(ETERM *term, int buf_size, byte *buf) {
     int term_len, encoded_len;
-
     if ((term_len = erl_term_len(term)) > buf_size) {
         fprintf(stderr, "term_len %u > buf_size %u", term_len, buf_size);
         exit(EXIT_INTERNAL_ERROR);
@@ -200,10 +197,15 @@ static void handle_zsocket_bind(ETERM *args, erl_czmq_state *state) {
         return;
     }
 
-    ETERM *result = erl_format("{ok,~i}", rc);
+    ETERM *result_parts[2];
+    result_parts[0] = ETERM_OK;
+    ETERM *rc_int = erl_mk_int(rc);
+    result_parts[1] = rc_int;
+    ETERM *result = erl_mk_tuple(result_parts, 2);
     write_term(result, state);
 
     erl_free(endpoint);
+    erl_free_term(rc_int);
     erl_free_term(result);
 }
 
@@ -372,9 +374,15 @@ static void handle_zstr_recv_nowait(ETERM *args, erl_czmq_state *state) {
         return;
     }
 
-    ETERM *result = erl_format("{ok,~s}", data);
+    ETERM *result_parts[2];
+    result_parts[0] = ETERM_OK;
+    ETERM *data_string = erl_mk_string(data);
+    result_parts[1] = data_string;
+    ETERM *result = erl_mk_tuple(result_parts, 2);
+
     write_term(result, state);
 
+    erl_free_term(data_string);
     erl_free_term(result);
     free(data);
 }
@@ -396,17 +404,19 @@ static void handle_zframe_recv_nowait(ETERM *args, erl_czmq_state *state) {
 
     size_t frame_size = zframe_size(frame);
     byte *frame_data = zframe_data(frame);
-    ETERM *data_bin = erl_mk_binary((char*)frame_data, frame_size);
-
     int more = zframe_more(frame);
-    ETERM *more_boolean;
-    if (more) {
-        more_boolean = ETERM_TRUE;
-    } else {
-        more_boolean = ETERM_FALSE;
-    }
 
-    ETERM *result = erl_format("{ok,{~w,~w}}", data_bin, more_boolean);
+    ETERM *result_parts[2];
+    result_parts[0] = ETERM_OK;
+    ETERM *data_more_parts[2];
+    ETERM *data_bin = erl_mk_binary((char*)frame_data, frame_size);
+    data_more_parts[0] = data_bin;
+    ETERM *more_boolean = more ? ETERM_TRUE : ETERM_FALSE;
+    data_more_parts[1] = more_boolean;
+    ETERM *data_more = erl_mk_tuple(data_more_parts, 2);
+    result_parts[1] = data_more;
+    ETERM *result = erl_mk_tuple(result_parts, 2);
+
     write_term(result, state);
 
     zframe_destroy(&frame);
@@ -605,9 +615,15 @@ static void handle_zcert_public_txt(ETERM *args, erl_czmq_state *state) {
     char *txt = zcert_public_txt(cert);
     assert(txt);
 
-    ETERM *result = erl_format("{ok,~s}", txt);
+    ETERM *result_parts[2];
+    result_parts[0] = ETERM_OK;
+    ETERM *txt_string = erl_mk_string(txt);
+    result_parts[1] = txt_string;
+    ETERM *result = erl_mk_tuple(result_parts, 2);
+
     write_term(result, state);
 
+    erl_free_term(txt_string);
     erl_free_term(result);
 }
 
@@ -652,7 +668,7 @@ static void handle_zcert_destroy(ETERM *args, erl_czmq_state *state) {
 static void handle_cmd(byte *buf, erl_czmq_state *state, int handler_count,
                        cmd_handler *handlers) {
     ETERM *cmd_term = erl_decode(buf);
-    if (!erl_match(ETERM_CMD_PATTERN, cmd_term)) {
+    if (!ERL_IS_TUPLE(cmd_term) || ERL_TUPLE_SIZE(cmd_term) != 2) {
         fprintf(stderr, "invalid cmd format: ");
         erl_print_term(stderr, cmd_term);
         fprintf(stderr, "\n");
@@ -675,12 +691,10 @@ static void handle_cmd(byte *buf, erl_czmq_state *state, int handler_count,
 }
 
 static void init_eterms() {
-    ETERM_CMD_PATTERN = erl_format("{_,_}");
     ETERM_OK = erl_mk_atom("ok");
     ETERM_UNDEFINED = erl_mk_atom("undefined");
     ETERM_TRUE = erl_mk_atom("true");
     ETERM_FALSE = erl_mk_atom("false");
-    ETERM_TODO = erl_mk_atom("todo");
     ETERM_PONG = erl_mk_atom("pong");
     ETERM_ERROR = erl_mk_atom("error");
     ETERM_ERROR_INVALID_SOCKET = erl_format("{error,invalid_socket}");

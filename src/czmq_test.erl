@@ -2,18 +2,18 @@
 
 -export([test/0,
          zstr_send_recv/1,
-         sendmem_framerecv/1]).
+         sendmem_framerecv/1,
+         zauth_test/1,
+         poller_test/1]).
 
 -include("czmq.hrl").
 
 test() ->
     {ok, Ctx} = czmq:start_link(),
-    %%zstr_send_recv(Ctx),
-    %%sendmem_framerecv(Ctx),
+    zstr_send_recv(Ctx),
+    sendmem_framerecv(Ctx),
     zauth_test(Ctx),
-
-    %%pong = czmq:ping(Ctx),
-
+    poller_test(Ctx),
     czmq:terminate(Ctx).
 
 %%--------------------------------------------------------------------
@@ -215,3 +215,35 @@ try_connect(Client, Server) ->
 
 connect_endpoint(Port) ->
     "tcp://127.0.0.1:" ++ integer_to_list(Port).
+
+poller_test(Ctx) ->
+    Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+    {ok, _} = czmq:zsocket_bind(Reader, "inproc://zpoller_test"),
+    Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+    ok = czmq:zsocket_connect(Writer, "inproc://zpoller_test"),
+
+    {ok, Poller} = czmq:subscribe_link(Reader, [{poll_interval, 100}]),
+
+    MsgFmt = "Watson, I want you in ~b second(s)",
+    send_messages(Writer, MsgFmt, 50),
+    receive_messages(MsgFmt, 50),
+
+    czmq:unsubscribe(Poller),
+
+    ok.
+
+send_messages(_Socket, _MsgFmt, 0) -> ok;
+send_messages(Socket, MsgFmt, N) when N > 0 ->
+    Msg = io_lib:format(MsgFmt, [N]),
+    ok = czmq:zstr_send(Socket, Msg),
+    send_messages(Socket, MsgFmt, N - 1).
+
+receive_messages(_MsgFmt, 0) -> ok;
+receive_messages(MsgFmt, N) when N > 0 ->
+    Expected = [iolist_to_binary(io_lib:format(MsgFmt, [N]))],
+    receive
+        Expected -> ok
+    after
+        1000 -> error(timeout)
+    end,
+    receive_messages(MsgFmt, N - 1).
