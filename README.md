@@ -26,19 +26,14 @@ therefore be associated with a port.
 The port should manage its state appropriately:
 
 - ZMQ context
-- Auth objects
+- Sockets
+- Auth object (limited to one per context)
+- Certs
 
-...
-
-Use dynamic arrays (vectors) to store references to ZMQ and CZMQ
+We'll use dynamic arrays (vectors) to store references to ZMQ and CZMQ
 objects. Objects will be referenced using their array index.
 
-Destroying an object should result in the array elements being set to NULL.
-
-Alternatively we could use the ztree class and store objects with prefixed
-names.
-
-TBD
+Destroying an object will result in the array elements being set to NULL.
 
 ### Sockets - Sending and Receiving
 
@@ -51,14 +46,14 @@ have to poll for them.
 Something like this:
 
 ``` erlang
-{ok, C} = czmq:start(),
-Writer = czmq:zsocket_new(C, ?ZMQ_PUSH),
-czmq:zsocket_bind(C, Writer, "tcp://*:1020"),
-Reader = czmq:zsocket_new(C, ?ZMQ_PULL),
-czmq:zsocket_connect(C, Reader, "tcp://localhost:1020"),
+{ok, Ctx} = czmq:start(),
+Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+czmq:zsocket_bind(Writer, "tcp://*:1020"),
+Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+czmq:zsocket_connect(Reader, "tcp://localhost:1020"),
 
-czmq:subscribe(C, Reader),
-Msg = "Watson, I found your flogger",
+czmq:subscribe(Reader),
+Msg = "Watson, what do you have to say for yourself?",
 czmq:zstr_send(C, Writer, Msg),
 receive
     Msg -> ok
@@ -67,10 +62,10 @@ after
 end
 ```
 
-I think the best way to implement this is to use a separate process (e.g. a
-timer czmq_poller) to poll the socket and send received messages to a registred
-process. This process would monitor both the czmq process and the subscriber
-process and terminate if either of those terminated.
+czmq:subscribe/1 should start a process that polls the specified socket and
+delivers messages to the subscribing process (optionally overridable). The
+polling process will monitor the czmq context and the target process and
+terminate when either process exits.
 
 ## Simplest Possible Thing That Could Work
 
