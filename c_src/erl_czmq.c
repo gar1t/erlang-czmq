@@ -36,6 +36,9 @@ ETERM *ETERM_ERROR_INVALID_CERT;
 #define ZSOCKOPT_PLAIN_PASSWORD 3
 #define ZSOCKOPT_CURVE_SERVER 4
 #define ZSOCKOPT_CURVE_SERVERKEY 5
+#define ZSOCKOPT_BACKLOG 6
+#define ZSOCKOPT_SNDHWM 7
+#define ZSOCKOPT_RCVHWM 8
 
 #define SUCCESS 0
 
@@ -245,7 +248,7 @@ static void handle_zsocket_sendmem(ETERM *args, erl_czmq_state *state) {
     int data_bin_size = ERL_BIN_SIZE(data_bin_arg);
 
     ETERM *flags_arg = erl_element(3, args);
-    int flags = ERL_INT_VALUE(flags_arg);
+    int flags = ERL_INT_VALUE(flags_arg) | ZFRAME_DONTWAIT;
 
     int rc = zsocket_sendmem(socket, data_bin, data_bin_size, flags);
     if (rc == 0) {
@@ -272,6 +275,86 @@ static void handle_zsocket_destroy(ETERM *args, erl_czmq_state *state) {
     clear_socket(int_arg(args, 1), state);
 
     write_term(ETERM_OK, state);
+}
+
+static void handle_zsockopt_get_str(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 2);
+
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    ETERM *opt_arg = erl_element(2, args);
+    int opt = ERL_INT_VALUE(opt_arg);
+
+    char* val;
+
+    switch(opt) {
+    case ZSOCKOPT_ZAP_DOMAIN:
+        val = zsocket_zap_domain(socket);
+        break;
+    case ZSOCKOPT_PLAIN_USERNAME:
+        val = zsocket_plain_username(socket);
+        break;
+    case ZSOCKOPT_PLAIN_PASSWORD:
+        val = zsocket_plain_password(socket);
+        break;
+    case ZSOCKOPT_CURVE_SERVERKEY:
+        val = zsocket_curve_serverkey(socket);
+        break;
+    default:
+        assert(0);
+    }
+
+    assert(val);
+    ETERM *result = erl_mk_string(val);
+    write_term(result, state);
+
+    erl_free_term(result);
+    erl_free(val);
+}
+
+static void handle_zsockopt_get_int(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 2);
+
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    ETERM *opt_arg = erl_element(2, args);
+    int opt = ERL_INT_VALUE(opt_arg);
+
+    int val;
+
+    switch(opt) {
+    case ZSOCKOPT_PLAIN_SERVER:
+        val = zsocket_plain_server(socket);
+        break;
+    case ZSOCKOPT_CURVE_SERVER:
+        val = zsocket_curve_server(socket);
+        break;
+    case ZSOCKOPT_BACKLOG:
+        val = zsocket_backlog(socket);
+        break;
+    case ZSOCKOPT_SNDHWM:
+        val = zsocket_sndhwm(socket);
+        break;
+    case ZSOCKOPT_RCVHWM:
+        val = zsocket_rcvhwm(socket);
+        break;
+    default:
+        assert(0);
+    }
+
+    ETERM *result = erl_mk_int(val);
+
+    write_term(result, state);
+
+    erl_free_term(result);
 }
 
 static void handle_zsockopt_set_str(ETERM *args, erl_czmq_state *state) {
@@ -333,6 +416,15 @@ static void handle_zsockopt_set_int(ETERM *args, erl_czmq_state *state) {
     case ZSOCKOPT_CURVE_SERVER:
         zsocket_set_curve_server(socket, val);
         break;
+    case ZSOCKOPT_BACKLOG:
+        zsocket_set_backlog(socket, val);
+        break;
+    case ZSOCKOPT_SNDHWM:
+        zsocket_set_sndhwm(socket, val);
+        break;
+    case ZSOCKOPT_RCVHWM:
+        zsocket_set_rcvhwm(socket, val);
+        break;
     default:
         assert(0);
     }
@@ -351,9 +443,15 @@ static void handle_zstr_send(ETERM *args, erl_czmq_state *state) {
 
     ETERM *data_arg = erl_element(2, args);
     char *data = erl_iolist_to_string(data_arg);
-    zstr_send(socket, data);
+    int data_len = strlen(data);
 
-    write_term(ETERM_OK, state);
+    // Use zsocket_sendmem to use non-blocking send (zstr_send blocks)
+    int rc = zsocket_sendmem(socket, data, data_len, ZFRAME_DONTWAIT);
+    if (rc == 0) {
+        write_term(ETERM_OK, state);
+    } else {
+        write_term(ETERM_ERROR, state);
+    }
 
     erl_free(data);
 }
@@ -715,7 +813,7 @@ void erl_czmq_init(erl_czmq_state *state) {
 }
 
 int erl_czmq_loop(erl_czmq_state *state) {
-    int HANDLER_COUNT = 23;
+    int HANDLER_COUNT = 25;
     cmd_handler handlers[HANDLER_COUNT];
     handlers[0] = &handle_ping;
     handlers[1] = &handle_zsocket_new;
@@ -724,22 +822,24 @@ int erl_czmq_loop(erl_czmq_state *state) {
     handlers[4] = &handle_zsocket_connect;
     handlers[5] = &handle_zsocket_sendmem;
     handlers[6] = &handle_zsocket_destroy;
-    handlers[7] = &handle_zsockopt_set_str;
-    handlers[8] = &handle_zsockopt_set_int;
-    handlers[9] = &handle_zstr_send;
-    handlers[10] = &handle_zstr_recv_nowait;
-    handlers[11] = &handle_zframe_recv_nowait;
-    handlers[12] = &handle_zauth_new;
-    handlers[13] = &handle_zauth_deny;
-    handlers[14] = &handle_zauth_allow;
-    handlers[15] = &handle_zauth_configure_plain;
-    handlers[16] = &handle_zauth_configure_curve;
-    handlers[17] = &handle_zauth_destroy;
-    handlers[18] = &handle_zcert_new;
-    handlers[19] = &handle_zcert_apply;
-    handlers[20] = &handle_zcert_public_txt;
-    handlers[21] = &handle_zcert_save_public;
-    handlers[22] = &handle_zcert_destroy;
+    handlers[7] = &handle_zsockopt_get_str;
+    handlers[8] = &handle_zsockopt_get_int;
+    handlers[9] = &handle_zsockopt_set_str;
+    handlers[10] = &handle_zsockopt_set_int;
+    handlers[11] = &handle_zstr_send;
+    handlers[12] = &handle_zstr_recv_nowait;
+    handlers[13] = &handle_zframe_recv_nowait;
+    handlers[14] = &handle_zauth_new;
+    handlers[15] = &handle_zauth_deny;
+    handlers[16] = &handle_zauth_allow;
+    handlers[17] = &handle_zauth_configure_plain;
+    handlers[18] = &handle_zauth_configure_curve;
+    handlers[19] = &handle_zauth_destroy;
+    handlers[20] = &handle_zcert_new;
+    handlers[21] = &handle_zcert_apply;
+    handlers[22] = &handle_zcert_public_txt;
+    handlers[23] = &handle_zcert_save_public;
+    handlers[24] = &handle_zcert_destroy;
 
     int cmd_len;
     byte cmd_buf[CMD_BUF_SIZE];

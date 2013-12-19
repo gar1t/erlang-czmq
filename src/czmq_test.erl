@@ -3,17 +3,22 @@
 -export([test/0,
          zstr_send_recv/1,
          sendmem_framerecv/1,
-         zauth_test/1,
-         poller_test/1]).
+         zauth/1,
+         poller/1,
+         router_dealer/1,
+         sockopts/1]).
 
 -include("czmq.hrl").
 
 test() ->
+    io:format("Testing erlang-czmq...~n"),
     {ok, Ctx} = czmq:start_link(),
     zstr_send_recv(Ctx),
     sendmem_framerecv(Ctx),
-    zauth_test(Ctx),
-    poller_test(Ctx),
+    zauth(Ctx),
+    poller(Ctx),
+    router_dealer(Ctx),
+    sockopts(Ctx),
     czmq:terminate(Ctx).
 
 %%--------------------------------------------------------------------
@@ -22,23 +27,29 @@ test() ->
 %%--------------------------------------------------------------------
 
 zstr_send_recv(Ctx) ->
+    io:format(" * zstr_send_recv: "),
+
     Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
     {ok, Port} = czmq:zsocket_bind(Writer, "tcp://*:*"),
 
     Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
     ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
+    timer:sleep(10),
+
     Msg = "Watson, I found your shirt",
     ok = czmq:zstr_send(Writer, Msg),
 
-    timer:sleep(100),
+    timer:sleep(10),
 
     {ok, Msg} = czmq:zstr_recv_nowait(Reader),
 
     error = czmq:zstr_recv_nowait(Reader),
 
     czmq:zsocket_destroy(Writer),
-    czmq:zsocket_destroy(Reader).
+    czmq:zsocket_destroy(Reader),
+
+    io:format("ok~n").
 
 %%--------------------------------------------------------------------
 %% @doc Tests sendmem and frame receieves as per
@@ -47,6 +58,8 @@ zstr_send_recv(Ctx) ->
 %%--------------------------------------------------------------------
 
 sendmem_framerecv(Ctx) ->
+    io:format(" * sendmem_framerecv: "),
+
     Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
     "PUSH" = czmq:zsocket_type_str(Writer),
     {ok, Port} = czmq:zsocket_bind(Writer, "tcp://*:*"),
@@ -55,10 +68,12 @@ sendmem_framerecv(Ctx) ->
     "PULL" = czmq:zsocket_type_str(Reader),
     ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
+    timer:sleep(10),
+
     ok = czmq:zsocket_sendmem(Writer, "ABC", ?ZFRAME_MORE),
     ok = czmq:zsocket_sendmem(Writer, "DEFG"),
 
-    timer:sleep(100),
+    timer:sleep(10),
 
     {ok, Frame1} = czmq:zframe_recv_nowait(Reader),
 
@@ -72,14 +87,18 @@ sendmem_framerecv(Ctx) ->
     error = czmq:zframe_recv_nowait(Reader),
 
     czmq:zsocket_destroy(Writer),
-    czmq:zsocket_destroy(Reader).
+    czmq:zsocket_destroy(Reader),
+
+    io:format("ok~n").
 
 %%--------------------------------------------------------------------
 %% @doc Tests zauth as per http://czmq.zeromq.org/manual:zauth.
 %% @end
 %%--------------------------------------------------------------------
 
-zauth_test(Ctx) ->
+zauth(Ctx) ->
+    io:format(" * zauth: "),
+
     Auth = czmq:zauth_new(Ctx),
 
     %% Default is to accept all clients.
@@ -170,7 +189,9 @@ zauth_test(Ctx) ->
 
     %% Cleanup
     delete_dir(TmpDir),
-    czmq:zauth_destroy(Auth).
+    czmq:zauth_destroy(Auth),
+
+    io:format("ok~n").
 
 create_tmp_dir() ->
     Dir = "/tmp/czmq_test",
@@ -198,39 +219,51 @@ client_server_can_connect(Ctx, Config) ->
     {ok, Port} = czmq:zsocket_bind(Server, "tcp://127.0.0.1:*"),
     ok = czmq:zsocket_connect(Client, connect_endpoint(Port)),
 
-    Result = try_connect(Client, Server),
+    timer:sleep(10),
+
+    Sent = czmq:zstr_send(Server, "Watson, sorry about the other night"),
+
+    timer:sleep(10),
+
+    Received = czmq:zstr_recv_nowait(Client),
 
     czmq:zsocket_destroy(Server),
     czmq:zsocket_destroy(Client),
-    
-    Result.
 
-try_connect(Client, Server) ->
-    ok = czmq:zstr_send(Server, "Watson, sorry about the other night"),
-    timer:sleep(100),
-    case czmq:zstr_recv_nowait(Client) of
-        {ok, _} -> true;
-        error -> false
-    end.
+    msg_sent_and_received(Sent, Received).
+
+msg_sent_and_received(ok, {ok, _}) -> true;
+msg_sent_and_received(_Sent, _Received) -> false.
 
 connect_endpoint(Port) ->
     "tcp://127.0.0.1:" ++ integer_to_list(Port).
 
-poller_test(Ctx) ->
+%%--------------------------------------------------------------------
+%% @doc Tests using a poller process to recv and dispatch messages.
+%% @end
+%%--------------------------------------------------------------------
+
+poller(Ctx) ->
+    io:format(" * poller: "),
+
     Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
     {ok, _} = czmq:zsocket_bind(Reader, "inproc://zpoller_test"),
+
     Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+    czmq:zsocket_set_sndhwm(Writer, 5000),
     ok = czmq:zsocket_connect(Writer, "inproc://zpoller_test"),
 
     {ok, Poller} = czmq:subscribe_link(Reader, [{poll_interval, 100}]),
 
     MsgFmt = "Watson, I want you in ~b second(s)",
-    send_messages(Writer, MsgFmt, 50),
-    receive_messages(MsgFmt, 50),
+    send_messages(Writer, MsgFmt, 5000),
+    receive_messages(MsgFmt, 5000),
 
     czmq:unsubscribe(Poller),
+    czmq:zsocket_destroy(Reader),
+    czmq:zsocket_destroy(Writer),
 
-    ok.
+    io:format("ok~n").
 
 send_messages(_Socket, _MsgFmt, 0) -> ok;
 send_messages(Socket, MsgFmt, N) when N > 0 ->
@@ -244,6 +277,84 @@ receive_messages(MsgFmt, N) when N > 0 ->
     receive
         Expected -> ok
     after
-        1000 -> error(timeout)
+        1000 -> error({timeout, N})
     end,
     receive_messages(MsgFmt, N - 1).
+
+%%--------------------------------------------------------------------
+%% @doc Tests router/dealer interactions.
+%% @end
+%%--------------------------------------------------------------------
+
+router_dealer(Ctx) ->
+    io:format(" * router_dealer: "),
+
+    Router = czmq:zsocket_new(Ctx, ?ZMQ_ROUTER),
+    {ok, 0} = czmq:zsocket_bind(Router, "inproc://router_dealer"),
+
+    Dealer1 = czmq:zsocket_new(Ctx, ?ZMQ_DEALER),
+    ok = czmq:zsocket_connect(Dealer1, "inproc://router_dealer"),
+
+    Dealer2 = czmq:zsocket_new(Ctx, ?ZMQ_DEALER),
+    ok = czmq:zsocket_connect(Dealer2, "inproc://router_dealer"),
+
+    ok = czmq:zstr_send(Dealer1, "dealer-1 says hello"),
+    ok = czmq:zstr_send(Dealer2, "dealer-2 says hi"),
+
+    timer:sleep(100),
+
+    %% Routers recv messages preceded by dealer ID frame.
+
+    {ok, [Dealer1Ref, <<"dealer-1 says hello">>]} =
+        czmq:zframe_recv_all(Router),
+
+    {ok, [Dealer2Ref, <<"dealer-2 says hi">>]} =
+        czmq:zframe_recv_all(Router),
+
+    error = czmq:zframe_recv_all(Router),
+
+    %% Use dealer IDs to router messages to specific dealers.
+
+    ok = czmq:zsocket_send_all(Router, [Dealer1Ref, "hello dealer-1"]),
+    ok = czmq:zsocket_send_all(Router, [Dealer2Ref, "hi dealer-2"]),
+
+    timer:sleep(100),
+
+    {ok, [<<"hello dealer-1">>]} = czmq:zframe_recv_all(Dealer1),
+    {ok, [<<"hi dealer-2">>]} = czmq:zframe_recv_all(Dealer2),
+
+    czmq:zsocket_destroy(Router),
+    czmq:zsocket_destroy(Dealer1),
+    czmq:zsocket_destroy(Dealer2),
+
+    io:format("ok~n").
+
+%%--------------------------------------------------------------------
+%% @doc Tests sockopt API.
+%% @end
+%%--------------------------------------------------------------------
+
+sockopts(Ctx) ->
+    io:format(" * sockopts: "),
+
+    %% TODO: This is an incomplete test.
+
+    Sock = czmq:zsocket_new(Ctx, ?ZMQ_ROUTER),
+
+    %% Backlog
+    100 = czmq:zsocket_backlog(Sock),
+    czmq:zsocket_set_backlog(Sock, 200),
+    200 = czmq:zsocket_backlog(Sock),
+
+    %% HWMs
+    1000 = czmq:zsocket_sndhwm(Sock),
+    czmq:zsocket_set_sndhwm(Sock, 2000),
+    2000 = czmq:zsocket_sndhwm(Sock),
+
+    1000 = czmq:zsocket_rcvhwm(Sock),
+    czmq:zsocket_set_rcvhwm(Sock, 3000),
+    3000 = czmq:zsocket_rcvhwm(Sock),
+
+    czmq:zsocket_destroy(Sock),
+
+    io:format("ok~n").

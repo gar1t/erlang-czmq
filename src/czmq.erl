@@ -10,16 +10,24 @@
          zsocket_connect/2,
          zsocket_sendmem/2,
          zsocket_sendmem/3,
+         zsocket_send_all/2,
          zsocket_destroy/1,
+         zsocket_sndhwm/1,
+         zsocket_rcvhwm/1,
+         zsocket_backlog/1,
          zsocket_set_zap_domain/2,
          zsocket_set_plain_server/2,
          zsocket_set_plain_username/2,
          zsocket_set_plain_password/2,
          zsocket_set_curve_server/2,
          zsocket_set_curve_serverkey/2,
+         zsocket_set_sndhwm/2,
+         zsocket_set_rcvhwm/2,
+         zsocket_set_backlog/2,
          zstr_send/2,
          zstr_recv_nowait/1,
          zframe_recv_nowait/1,
+         zframe_recv_all/1,
          zframe_data/1,
          zframe_more/1,
          zauth_new/1,
@@ -56,22 +64,24 @@
 -define(CMD_ZSOCKET_CONNECT,         4).
 -define(CMD_ZSOCKET_SENDMEM,         5).
 -define(CMD_ZSOCKET_DESTROY,         6).
--define(CMD_ZSOCKOPT_SET_STR,        7).
--define(CMD_ZSOCKOPT_SET_INT,        8).
--define(CMD_ZSTR_SEND,               9).
--define(CMD_ZSTR_RECV_NOWAIT,       10).
--define(CMD_ZFRAME_RECV_NOWAIT,     11).
--define(CMD_ZAUTH_NEW,              12).
--define(CMD_ZAUTH_DENY,             13).
--define(CMD_ZAUTH_ALLOW,            14).
--define(CMD_ZAUTH_CONFIGURE_PLAIN,  15).
--define(CMD_ZAUTH_CONFIGURE_CURVE,  16).
--define(CMD_ZAUTH_DESTROY,          17).
--define(CMD_ZCERT_NEW,              18).
--define(CMD_ZCERT_APPLY,            19).
--define(CMD_ZCERT_PUBLIC_TXT,       20).
--define(CMD_ZCERT_SAVE_PUBLIC,      21).
--define(CMD_ZCERT_DESTROY,          22).
+-define(CMD_ZSOCKOPT_GET_STR,        7).
+-define(CMD_ZSOCKOPT_GET_INT,        8).
+-define(CMD_ZSOCKOPT_SET_STR,        9).
+-define(CMD_ZSOCKOPT_SET_INT,       10).
+-define(CMD_ZSTR_SEND,              11).
+-define(CMD_ZSTR_RECV_NOWAIT,       12).
+-define(CMD_ZFRAME_RECV_NOWAIT,     13).
+-define(CMD_ZAUTH_NEW,              14).
+-define(CMD_ZAUTH_DENY,             15).
+-define(CMD_ZAUTH_ALLOW,            16).
+-define(CMD_ZAUTH_CONFIGURE_PLAIN,  17).
+-define(CMD_ZAUTH_CONFIGURE_CURVE,  18).
+-define(CMD_ZAUTH_DESTROY,          19).
+-define(CMD_ZCERT_NEW,              20).
+-define(CMD_ZCERT_APPLY,            21).
+-define(CMD_ZCERT_PUBLIC_TXT,       22).
+-define(CMD_ZCERT_SAVE_PUBLIC,      23).
+-define(CMD_ZCERT_DESTROY,          24).
 
 %% These *must* correspond to the ZSOCKOPT_XXX definitions in czmq_port.c
 -define(ZSOCKOPT_ZAP_DOMAIN, 0).
@@ -80,6 +90,9 @@
 -define(ZSOCKOPT_PLAIN_PASSWORD, 3).
 -define(ZSOCKOPT_CURVE_SERVER, 4).
 -define(ZSOCKOPT_CURVE_SERVERKEY, 5).
+-define(ZSOCKOPT_BACKLOG, 6).
+-define(ZSOCKOPT_SNDHWM, 7).
+-define(ZSOCKOPT_RCVHWM, 8).
 
 %%%===================================================================
 %%% Start / init
@@ -136,35 +149,71 @@ zsocket_sendmem({Ctx, Socket}, Data, Flags) ->
     gen_server:call(
       Ctx, {?CMD_ZSOCKET_SENDMEM, {Socket, DataBin, Flags}}, infinity).
 
+zsocket_send_all(BoundSocket, [Last]) ->
+    zsocket_sendmem(BoundSocket, Last, 0);
+zsocket_send_all(BoundSocket, [Frame|Rest]) ->
+    handle_sendmem_all(
+      zsocket_sendmem(BoundSocket, Frame, ?ZFRAME_MORE),
+      BoundSocket, Rest).
+
+handle_sendmem_all(ok, BoundSocket, Rest) ->
+    zsocket_send_all(BoundSocket, Rest);
+handle_sendmem_all(Err, _BoundSocket, _Rest) ->
+    Err.
+
 zsocket_destroy({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZSOCKET_DESTROY, {Socket}}, infinity).
 
-zsocket_set_zap_domain({Ctx, Socket}, Domain) ->
-    Args = {Socket, ?ZSOCKOPT_ZAP_DOMAIN, Domain},
+sockopt_int({Ctx, Socket}, Opt) ->
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_GET_INT, {Socket, Opt}}, infinity).
+
+zsocket_sndhwm(Sock) ->
+    sockopt_int(Sock, ?ZSOCKOPT_SNDHWM).
+
+zsocket_rcvhwm(Sock) ->
+    sockopt_int(Sock, ?ZSOCKOPT_RCVHWM).
+
+zsocket_backlog(Sock) ->
+    sockopt_int(Sock, ?ZSOCKOPT_BACKLOG).
+
+sockopt_set_str({Ctx, Socket}, Opt, Str) when is_list(Str) ->
+    Args = {Socket, Opt, Str},
     gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
 
-zsocket_set_plain_server({Ctx, Socket}, Flag) ->
-    Args = {Socket, ?ZSOCKOPT_PLAIN_SERVER, bool_to_int(Flag)},
-    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_INT, Args}, infinity).
+sockopt_set_int({Ctx, Socket}, Opt, Int) when is_integer(Int) ->
+    Args = {Socket, Opt, Int},
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_INT, Args}, infinity);
+sockopt_set_int(Sock, Opt, true) ->
+    sockopt_set_int(Sock, Opt, 1);
+sockopt_set_int(Sock, Opt, false) ->
+    sockopt_set_int(Sock, Opt, 0).
 
-bool_to_int(true) -> 1;
-bool_to_int(false) -> 0.
+zsocket_set_zap_domain(Sock, Domain) ->
+    sockopt_set_str(Sock, ?ZSOCKOPT_ZAP_DOMAIN, Domain).
 
-zsocket_set_plain_username({Ctx, Socket}, Username) ->
-    Args = {Socket, ?ZSOCKOPT_PLAIN_USERNAME, Username},
-    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
+zsocket_set_plain_server(Sock, Flag) ->
+    sockopt_set_int(Sock, ?ZSOCKOPT_PLAIN_SERVER, Flag).
 
-zsocket_set_plain_password({Ctx, Socket}, Password) ->
-    Args = {Socket, ?ZSOCKOPT_PLAIN_PASSWORD, Password},
-    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
+zsocket_set_plain_username(Sock, Username) ->
+    sockopt_set_str(Sock, ?ZSOCKOPT_PLAIN_USERNAME, Username).
 
-zsocket_set_curve_server({Ctx, Socket}, Flag) ->
-    Args = {Socket, ?ZSOCKOPT_CURVE_SERVER, bool_to_int(Flag)},
-    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_INT, Args}, infinity).
+zsocket_set_plain_password(Sock, Password) ->
+    sockopt_set_str(Sock, ?ZSOCKOPT_PLAIN_PASSWORD, Password).
 
-zsocket_set_curve_serverkey({Ctx, Socket}, Key) when is_list(Key) ->
-    Args = {Socket, ?ZSOCKOPT_CURVE_SERVERKEY, Key},
-    gen_server:call(Ctx, {?CMD_ZSOCKOPT_SET_STR, Args}, infinity).
+zsocket_set_curve_server(Sock, Flag) ->
+    sockopt_set_int(Sock, ?ZSOCKOPT_CURVE_SERVER, Flag).
+
+zsocket_set_curve_serverkey(Sock, Key) ->
+    sockopt_set_str(Sock, ?ZSOCKOPT_CURVE_SERVERKEY, Key).
+
+zsocket_set_sndhwm(Sock, Hwm) ->
+    sockopt_set_int(Sock, ?ZSOCKOPT_SNDHWM, Hwm).
+
+zsocket_set_rcvhwm(Sock, Hwm) ->
+    sockopt_set_int(Sock, ?ZSOCKOPT_RCVHWM, Hwm).
+
+zsocket_set_backlog(Sock, Backlog) ->
+    sockopt_set_int(Sock, ?ZSOCKOPT_BACKLOG, Backlog).
 
 zstr_send({Ctx, Socket}, Data) ->
     gen_server:call(Ctx, {?CMD_ZSTR_SEND, {Socket, Data}}, infinity).
@@ -174,6 +223,20 @@ zstr_recv_nowait({Ctx, Socket}) ->
 
 zframe_recv_nowait({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZFRAME_RECV_NOWAIT, {Socket}}, infinity).
+
+zframe_recv_all(BoundSocket) ->
+    handle_frame_recv(
+      zframe_recv_nowait(BoundSocket),
+      BoundSocket, []).
+
+handle_frame_recv({ok, {Frame, true}}, BoundSocket, Acc) ->
+    handle_frame_recv(
+      zframe_recv_nowait(BoundSocket),
+      BoundSocket, [Frame|Acc]);
+handle_frame_recv({ok, {Frame, false}}, _BoundSocket, Acc) ->
+    {ok, lists:reverse([Frame|Acc])};
+handle_frame_recv(error, _BoundSocket, []) ->
+    error.
 
 zframe_data({Data, _More}) -> Data.
 
