@@ -31,7 +31,7 @@ $(CZMQ_BENCHMARK): $(CZMQ_BENCHMARK_OBJS)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
-	$(RM) *.o *~ $(CZMQ_PORT)
+	$(RM) *.o *~ $(CZMQ_PORT) $(CZMQ_BENCHMARK)
 
 depend: $(SRCS)
 	makedepend -Y. $^ 2>/dev/null
