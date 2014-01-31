@@ -1,3 +1,12 @@
+%% ===================================================================
+%% @author Garrett Smith <g@rre.tt>
+%% @copyright 2014 Garrett Smith
+%%
+%% @doc Benchmarker for czmq (external port bindings).
+%%
+%% @end
+%% ===================================================================
+
 -module(czmq_benchmark).
 
 -behavior(zmq_gen_benchmark).

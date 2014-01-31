@@ -1,3 +1,16 @@
+%% ===================================================================
+%% @author Garrett Smith <g@rre.tt>
+%% @copyright 2014 Garrett Smith
+%%
+%% @doc Polling process for socket messages.
+%%
+%% As erlang-czmq is implemented as an external port, it uses all.
+%% non blocking operations. Message devliery must be performed by
+%% routinely polling a socket.
+%%
+%% @end
+%% ===================================================================
+
 -module(czmq_poller).
 
 -behavior(gen_server).

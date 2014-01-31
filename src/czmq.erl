@@ -1,3 +1,15 @@
+%% ===================================================================
+%% @author Garrett Smith <g@rre.tt>
+%% @copyright 2014 Garrett Smith
+%%
+%% @doc czmq interface (facade).
+%%
+%% All czmq operations are accessed via this module. Refer to docs,
+%% tests, and sample code for more information.
+%%
+%% @end
+%% ===================================================================
+
 -module(czmq).
 
 -behavior(gen_server).

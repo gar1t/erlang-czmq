@@ -1,8 +1,12 @@
-%% @copyright 2007 Mochi Media, Inc.
+%% ===================================================================
 %% @author Matthew Dempsky <matthew@mochimedia.com>
+%% @copyright 2007 Mochi Media, Inc.
 %%
-%% @doc Erlang module for automatically reloading modified modules
-%% during development.
+%% @doc Auto module reloader copied from Mochiweb's reloader - used for
+%% development and be safely omitted from packaged production software.
+%%
+%% @end
+%% ===================================================================
 
 -module(czmq_reloader).
 -author("Matthew Dempsky <matthew@mochimedia.com>").

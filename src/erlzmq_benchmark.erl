@@ -1,3 +1,12 @@
+%% ===================================================================
+%% @author Garrett Smith <g@rre.tt>
+%% @copyright 2014 Garrett Smith
+%%
+%% @doc Benchmarker for erlzmq (NIF bindings).
+%%
+%% @end
+%% ===================================================================
+
 -module(erlzmq_benchmark).
 
 -behavior(zmq_gen_benchmark).

@@ -1,3 +1,12 @@
+%% ===================================================================
+%% @author Garrett Smith <g@rre.tt>
+%% @copyright 2014 Garrett Smith
+%%
+%% @doc Benchmarking behavior.
+%%
+%% @end
+%% ===================================================================
+
 -module(zmq_gen_benchmark).
 
 -export([start_recv/1, start_recv/2, stop/1]).

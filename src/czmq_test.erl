@@ -1,3 +1,12 @@
+%% ===================================================================
+%% @author Garrett Smith <g@rre.tt>
+%% @copyright 2014 Garrett Smith
+%%
+%% @doc Tests for erlang-czmq.
+%%
+%% @end
+%% ===================================================================
+
 -module(czmq_test).
 
 -export([test/0,
