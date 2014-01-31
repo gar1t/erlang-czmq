@@ -1,10 +1,11 @@
-rebar=./rebar
+PROJECT = czmq
 
-compile:
-	$(rebar) compile
+include erlang.mk
 
-clean:
-	$(rebar) clean
+app::
+	cd c_src; make
+
+clean::
 	cd c_src; make clean
 
 opts=
