@@ -9,7 +9,6 @@
 
 -module(czmq_benchmark).
 
--behavior(zmq_gen_benchmark).
 
 -export([start_recv/0, start_recv/1, stop/1]).
 
