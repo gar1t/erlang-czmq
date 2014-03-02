@@ -1,8 +1,7 @@
-CC = gcc
+CC = @CC@
 CFLAGS = -Wall -g
-INCLUDES = -I/usr/local/lib/erlang/lib/erl_interface-3.7.11/include
-INCLUDES_xxx = -I/usr/include/x86_64-linux-gnu
-LFLAGS = -L/usr/local/lib/erlang/lib/erl_interface-3.7.11/lib
+INCLUDES = -I@ERLANG_LIB_DIR_erl_interface@/include
+LFLAGS = -L@ERLANG_LIB_DIR_erl_interface@/lib
 LIBS = -lerl_interface -lei -lpthread -lczmq
 
 SRCS = $(wildcard *.c)

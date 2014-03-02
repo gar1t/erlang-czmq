@@ -5,3 +5,8 @@
 ebin
 priv/czmq-port
 priv/czmq-benchmark
+autom4te.cache
+config.log
+config.status
+Makefile
+c_src/Makefile

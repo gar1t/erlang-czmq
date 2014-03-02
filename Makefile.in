@@ -9,5 +9,5 @@ clean::
 	cd c_src; make clean
 
 opts=
-shell: compile
+shell: app
 	erl -pa ebin -s czmq_reloader ${opts}
