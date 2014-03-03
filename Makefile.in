@@ -1,4 +1,5 @@
 PROJECT = czmq
+COMPILE_FIRST = zmq_gen_benchmark
 
 include erlang.mk
 
