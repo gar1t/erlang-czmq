@@ -15,7 +15,7 @@
 
 -behavior(gen_server).
 
--export([start/3, start_link/3, stop/1]).
+-export([start/2, start_link/2, stop/1]).
 
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3,
          terminate/2, code_change/3]).
@@ -28,13 +28,13 @@
 %%% Start / init
 %%%===================================================================
 
-start(Socket, Context, Options) ->
-    gen_server:start(?MODULE, [Socket, Context, Options, self()], []).
+start(Socket, Options) ->
+    gen_server:start(?MODULE, [Socket, Options, self()], []).
 
-start_link(Socket, Context, Options) ->
-    gen_server:start_link(?MODULE, [Socket, Context, Options, self()], []).
+start_link(Socket, Options) ->
+    gen_server:start_link(?MODULE, [Socket, Options, self()], []).
 
-init([Socket, _Context, Options, Parent]) ->
+init([Socket, Options, Parent]) ->
     DispatchOption = dispatch_option(Options),
     Target = maybe_target(DispatchOption, Options, Parent),
     maybe_monitor(Target),
