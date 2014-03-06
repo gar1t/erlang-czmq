@@ -40,6 +40,8 @@
          zsocket_set_unsubscribe/2,
          zstr_send/2,
          zstr_recv_nowait/1,
+         zstr_recv/1,
+         zstr_recv/2,
          zframe_recv_nowait/1,
          zframe_recv_all/1,
          zframe_data/1,
@@ -242,6 +244,38 @@ zstr_send({Ctx, Socket}, Data) ->
 
 zstr_recv_nowait({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZSTR_RECV_NOWAIT, {Socket}}, infinity).
+
+zstr_recv(BoundSocket) ->
+    zstr_recv(BoundSocket, []).
+
+zstr_recv(BoundSocket, Options) ->
+    Poller = start_poller(BoundSocket, Options),
+    Reply = zstr_recv_reply(poller_recv(Poller, poll_timeout(Options))),
+    stop_poller(Poller),
+    Reply.
+
+start_poller(BoundSocket, Options) ->
+    {ok, Poller} = czmq_poller:start_link(BoundSocket, Options),
+    Poller.
+
+poll_timeout(Options) ->
+    proplists:get_value(timeout, Options, infinity).
+
+poller_recv(Poller, Timeout) ->
+    receive
+        {Poller, Msg} -> {ok, Msg}
+    after
+        Timeout -> {error, timeout}
+    end.
+
+zstr_recv_reply({ok, Parts}) -> {ok, parts_to_list(Parts)};
+zstr_recv_reply({error, Err}) -> {error, Err}.
+
+parts_to_list(Parts) ->
+    binary_to_list(iolist_to_binary(Parts)).
+
+stop_poller(Poller) ->
+    ok = czmq_poller:stop(Poller).
 
 zframe_recv_nowait({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZFRAME_RECV_NOWAIT, {Socket}}, infinity).
