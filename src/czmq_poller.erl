@@ -60,7 +60,7 @@ maybe_monitor(undefined) -> ok;
 maybe_monitor(Pid) -> erlang:monitor(process, Pid).
 
 dispatch_fun(undefined, Target) ->
-    fun(Msg) -> erlang:send(Target, Msg) end;
+    fun(Msg) -> erlang:send(Target, {self(), Msg}) end;
 dispatch_fun(Dispatch, _Target) ->
     Dispatch.
 
