@@ -144,9 +144,24 @@ ping(Ctx) ->
 ping(Ctx, Timeout) ->
     gen_server:call(Ctx, {?CMD_PING, {}}, Timeout).
 
+zsocket_new(Ctx, Type) when is_atom(Type) ->
+    zsocket_new(Ctx, atom_to_socket_type(Type));
 zsocket_new(Ctx, Type) ->
     Socket = gen_server:call(Ctx, {?CMD_ZSOCKET_NEW, {Type}}, infinity),
     bound_socket(Socket, Ctx).
+
+atom_to_socket_type(pair)   -> ?ZMQ_PAIR;
+atom_to_socket_type(pub)    -> ?ZMQ_PUB;
+atom_to_socket_type(sub)    -> ?ZMQ_SUB;
+atom_to_socket_type(req)    -> ?ZMQ_REQ;
+atom_to_socket_type(rep)    -> ?ZMQ_REP;
+atom_to_socket_type(dealer) -> ?ZMQ_DEALER;
+atom_to_socket_type(router) -> ?ZMQ_ROUTER;
+atom_to_socket_type(pull)   -> ?ZMQ_PULL;
+atom_to_socket_type(push)   -> ?ZMQ_PUSH;
+atom_to_socket_type(xpub)   -> ?ZMQ_XPUB;
+atom_to_socket_type(xsub)   -> ?ZMQ_XSUB;
+atom_to_socket_type(stream) -> ?ZMQ_STREAM.
 
 bound_socket(Socket, Ctx) -> {Ctx, Socket}.
 
@@ -162,10 +177,16 @@ zsocket_connect({Ctx, Socket}, Endpoint) ->
 zsocket_sendmem(BoundSocket, Data) ->
     zsocket_sendmem(BoundSocket, Data, 0).
 
+zsocket_sendmem(BoundSocket, Data, Flag) when is_atom(Flag) ->
+    zsocket_sendmem(BoundSocket, Data, atom_to_zframe_flag(Flag));
 zsocket_sendmem({Ctx, Socket}, Data, Flags) ->
     DataBin = iolist_to_binary(Data),
     gen_server:call(
       Ctx, {?CMD_ZSOCKET_SENDMEM, {Socket, DataBin, Flags}}, infinity).
+
+atom_to_zframe_flag(more)     -> ?ZFRAME_MORE;
+atom_to_zframe_flag(reuse)    -> ?ZFRAME_REUSE;
+atom_to_zframe_flag(dontwait) -> ?ZFRAME_DONTWAIT.
 
 zsocket_send_all(BoundSocket, [Last]) ->
     zsocket_sendmem(BoundSocket, Last, 0);
@@ -314,6 +335,8 @@ zauth_configure_plain({Ctx, Auth}, Domain, PwdFile) ->
     gen_server:call(
       Ctx, {?CMD_ZAUTH_CONFIGURE_PLAIN, {Auth, Domain, PwdFile}}).
 
+zauth_configure_curve(BoundAuth, Domain, allow_any) ->
+    zauth_configure_curve(BoundAuth, Domain, ?CURVE_ALLOW_ANY);
 zauth_configure_curve({Ctx, Auth}, Domain, Location) ->
     gen_server:call(
       Ctx, {?CMD_ZAUTH_CONFIGURE_CURVE, {Auth, Domain, Location}}).
