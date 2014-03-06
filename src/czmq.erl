@@ -36,6 +36,8 @@
          zsocket_set_sndhwm/2,
          zsocket_set_rcvhwm/2,
          zsocket_set_backlog/2,
+         zsocket_set_subscribe/2,
+         zsocket_set_unsubscribe/2,
          zstr_send/2,
          zstr_recv_nowait/1,
          zframe_recv_nowait/1,
@@ -105,6 +107,8 @@
 -define(ZSOCKOPT_BACKLOG, 6).
 -define(ZSOCKOPT_SNDHWM, 7).
 -define(ZSOCKOPT_RCVHWM, 8).
+-define(ZSOCKOPT_SUBSCRIBE, 9).
+-define(ZSOCKOPT_UNSUBSCRIBE, 10).
 
 %%%===================================================================
 %%% Start / init
@@ -226,6 +230,12 @@ zsocket_set_rcvhwm(Sock, Hwm) ->
 
 zsocket_set_backlog(Sock, Backlog) ->
     sockopt_set_int(Sock, ?ZSOCKOPT_BACKLOG, Backlog).
+
+zsocket_set_subscribe(Sock, Subscribe) ->
+    sockopt_set_str(Sock, ?ZSOCKOPT_SUBSCRIBE, Subscribe).
+
+zsocket_set_unsubscribe(Sock, Unsubscribe) ->
+    sockopt_set_str(Sock, ?ZSOCKOPT_UNSUBSCRIBE, Unsubscribe).
 
 zstr_send({Ctx, Socket}, Data) ->
     gen_server:call(Ctx, {?CMD_ZSTR_SEND, {Socket, Data}}, infinity).

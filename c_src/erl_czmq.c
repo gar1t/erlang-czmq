@@ -48,6 +48,8 @@ ETERM *ETERM_ERROR_INVALID_CERT;
 #define ZSOCKOPT_BACKLOG 6
 #define ZSOCKOPT_SNDHWM 7
 #define ZSOCKOPT_RCVHWM 8
+#define ZSOCKOPT_SUBSCRIBE 9
+#define ZSOCKOPT_UNSUBSCRIBE 10
 
 #define SUCCESS 0
 
@@ -253,8 +255,8 @@ static void handle_zsocket_sendmem(ETERM *args, erl_czmq_state *state) {
     }
 
     ETERM *data_bin_arg = erl_element(2, args);
-    void *data_bin = ERL_BIN_PTR(data_bin_arg);
-    int data_bin_size = ERL_BIN_SIZE(data_bin_arg);
+    const void *data_bin = ERL_BIN_PTR(data_bin_arg);
+    size_t data_bin_size = ERL_BIN_SIZE(data_bin_arg);
 
     ETERM *flags_arg = erl_element(3, args);
     int flags = ERL_INT_VALUE(flags_arg) | ZFRAME_DONTWAIT;
@@ -393,6 +395,12 @@ static void handle_zsockopt_set_str(ETERM *args, erl_czmq_state *state) {
         break;
     case ZSOCKOPT_CURVE_SERVERKEY:
         zsocket_set_curve_serverkey(socket, val);
+        break;
+    case ZSOCKOPT_SUBSCRIBE:
+        zsocket_set_subscribe(socket, val);
+        break;
+    case ZSOCKOPT_UNSUBSCRIBE:
+        zsocket_set_unsubscribe(socket, val);
         break;
     default:
         assert(0);
