@@ -13,98 +13,98 @@ Non Goals:
 
 ## Approach
 
-The "bindings" (this is a lose term given the approach here) should be
+The "bindings" (this is a lose term given the approach here) are
 implemented as a C Port to ensure that crashes don't effect the Erlang VM.
+
+The API mirrors that of CZMQ with all functions being available through the
+`czmq`module.
 
 ### Port to CZMQ Mapping
 
-The port will manage a single ZMQ context. All context managed state will
-therefore be associated with a port.
+The port manages a single ZMQ context. All context managed state is associated
+with a port.
 
-### State Management
-
-The port should manage its state appropriately:
+The port manages its state appropriately:
 
 - ZMQ context
 - Sockets
 - Auth object (limited to one per context)
 - Certs
 
-We'll use dynamic arrays (vectors) to store references to ZMQ and CZMQ
-objects. Objects will be referenced using their array index.
+We use dynamic arrays (vectors) to store references to ZMQ and CZMQ
+objects. Objects are referenced using their array index.
 
-Destroying an object will result in the array elements being set to NULL.
+When an object is destroyed, it's associated element in the applicable array is
+set to NULL.
 
 ### Sockets - Sending and Receiving
 
-The C port interface provides a synchronous request/response protocol. This
-means we need to poll for received messages.
+Erlang C ports use a synchronous request/response protocol over standard input
+output. This makes them unsuitable for handling the asynchronous events that
+are endemic to ZeroMQ. Received events must be routinely polled using non
+blocking operations.
 
-It's nice in Erlang however to have messages simply delivered, rather than to
-have to poll for them.
+Messages can be checked explicitly or routinely using `czmq_poller`. Messages
+received by `czmq_poller` can be delivered as Erlang messages to another
+process, effectively simulating asynchronous message delivery, albiet with some
+latency introduced by the polling sleep interval.
 
-Something like this:
+## Using `erlang-czmq`
 
-``` erlang
-{ok, Ctx} = czmq:start(),
-Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
-czmq:zsocket_bind(Writer, "tcp://*:1020"),
-Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
-czmq:zsocket_connect(Reader, "tcp://localhost:1020"),
+## Benchmarks
 
-czmq:subscribe(Reader),
-Msg = "Watson, what do you have to say for yourself?",
-czmq:zstr_send(C, Writer, Msg),
-receive
-    Msg -> ok
-after
-    100 -> error(not_delivered)
-end
-```
+While safety is the prime consideration for this binding, performance is
+important as well. `erlang-czmq` provides a simple framework for measuring
+message send/receive throughput using different bindings.
 
-czmq:subscribe/1 should start a process that polls the specified socket and
-delivers messages to the subscribing process (optionally overridable). The
-polling process will monitor the czmq context and the target process and
-terminate when either process exits.
+Benchmarks follow this approach:
 
-## Simplest Possible Thing That Could Work
+- A receiver binds to a local port and receives messages as quickly as it can,
+  printing the number of received messages per second.
+- A sender connects to the receiver port and sends messages as quickly as it
+  can for a period of time.
 
-See src/czmq_test.erl for tests.
+This scheme can be used to test different combinations of bindings for sending
+and receiving. Below are some preliminary results, which are useful as a rough
+gage for the relative performance differences of bindings.
 
-## Performance
+### C Receiver / C Sender
 
-We should provide some comparison benchmarks on the performance of this binding
-versus the standard bindings here:
+To test the native (i.e C) performance of CZMQ, use `czmq-benchmark` located in
+`priv` after compiling `erlang-czmq`. First, start the receiver:
 
-    git clone git://github.com/zeromq/erlzmq2.git
+    $ cd erlang-czmq/priv
+    $ ./czmq-benchmark recv
 
-Here's what we should test:
+The receiver will print the total number of messages it receives for each
+interval.
 
-- Received messages per second for some message size
-- Delivered messages per second for some message size
+Next, in a separate shell, start the sender:
 
-To remove language variances, we should use a C program to send and receive
-messages.
+    $ cd erlang-czmq/priv
+	$ ./czqm-benchmark send
 
-### Test 1
+You will see the number of messages the receiver received during the time the
+sender was sending. Discard the first and last observations as they reflect
+partial intervals.
 
-    Push (Erlang) -----> Pull (C)
+### C Receiver / erlang-czmq Sender
 
-In this case, the C program would run in a blocking recv and track the number
-of messages received, printing a total an incremental count every second.
+This test measures the throughput of using an `erlang-czmq` sender with a C
+receiver.
 
-### Test 2
+Start the receiver as with the C / C test above.
 
-    Pull (Erlang) <----- Push (C)
+Next,
 
-In this case, the Erlang program would run in a non blocking recv and track
-messages received, printing the total and incremental count every second.
+### Benchark Summary - Lenovo X220 at 2.7 GHz
 
-### Test 3
-
-We might also use a dealer / router pair to test a request/response exchange.
-
-      Dealer (Erlang) ----> Router (C)
-	        ^                  |
-            |__________________|
-
+    | Recv / Send               | Average MPS | N |
+	|---------------------------|-------------|---|
+    | C / C                     |     1190500 | 5 |
+    | C / erlzmq                |      128136 | 5 |
+	| C / erlang-czmq           |       35990 | 5 |
+	| erlzmq / C                |      152678 | 5 |
+	| erlang-czmq / C           |       10126 | 5 |
+	| erlzmq / erlzmq           |      134234 | 5 |
+	| erlang-czmq / erlang-czmq |        9614 | 5 |
