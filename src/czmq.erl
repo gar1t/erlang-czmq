@@ -307,13 +307,13 @@ bound_cert(Cert, Ctx) -> {Ctx, Cert}.
 
 subscribe(Socket) -> subscribe(Socket, []).
 
-subscribe({Ctx, _}=Socket, Options) ->
-    czmq_poller:start(Socket, Ctx, Options).
+subscribe(Socket, Options) ->
+    czmq_poller:start(Socket, Options).
 
 subscribe_link(Socket) -> subscribe_link(Socket, []).
 
-subscribe_link({Ctx, _}=Socket, Options) ->
-    czmq_poller:start_link(Socket, Ctx, Options).
+subscribe_link(Socket, Options) ->
+    czmq_poller:start_link(Socket, Options).
 
 unsubscribe(Poller) ->
     czmq_poller:stop(Poller).
