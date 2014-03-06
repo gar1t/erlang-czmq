@@ -15,6 +15,9 @@
          zauth/1,
          poller/1,
          router_dealer/1,
+         push_pull/1,
+         req_rep/1,
+         pub_sub/1,
          sockopts/1]).
 
 -include("czmq.hrl").
@@ -27,6 +30,9 @@ test() ->
     zauth(Ctx),
     poller(Ctx),
     router_dealer(Ctx),
+    push_pull(Ctx),
+    req_rep(Ctx),
+    pub_sub(Ctx),
     sockopts(Ctx),
     czmq:terminate(Ctx).
 
@@ -38,10 +44,10 @@ test() ->
 zstr_send_recv(Ctx) ->
     io:format(" * zstr_send_recv: "),
 
-    Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+    Writer = czmq:zsocket_new(Ctx, push),
     {ok, Port} = czmq:zsocket_bind(Writer, "tcp://*:*"),
 
-    Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+    Reader = czmq:zsocket_new(Ctx, pull),
     ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
     timer:sleep(10),
@@ -69,17 +75,17 @@ zstr_send_recv(Ctx) ->
 sendmem_framerecv(Ctx) ->
     io:format(" * sendmem_framerecv: "),
 
-    Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+    Writer = czmq:zsocket_new(Ctx, push),
     "PUSH" = czmq:zsocket_type_str(Writer),
     {ok, Port} = czmq:zsocket_bind(Writer, "tcp://*:*"),
 
-    Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+    Reader = czmq:zsocket_new(Ctx, pull),
     "PULL" = czmq:zsocket_type_str(Reader),
     ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
     timer:sleep(10),
 
-    ok = czmq:zsocket_sendmem(Writer, "ABC", ?ZFRAME_MORE),
+    ok = czmq:zsocket_sendmem(Writer, "ABC", more),
     ok = czmq:zsocket_sendmem(Writer, "DEFG"),
 
     timer:sleep(10),
@@ -173,7 +179,7 @@ zauth(Ctx) ->
     false = client_server_can_connect(Ctx, CurveConfig),
 
     %% Configure curve to allow any
-    czmq:zauth_configure_curve(Auth, "*", ?CURVE_ALLOW_ANY),
+    czmq:zauth_configure_curve(Auth, "*", allow_any),
     true = client_server_can_connect(Ctx, CurveConfig),
 
     %% Specifying a location with no valid certs, clients are defined.
@@ -220,8 +226,8 @@ write_password_file(File, Creds) ->
     ok = file:write_file(File, Bytes).
 
 client_server_can_connect(Ctx, Config) ->
-    Server = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
-    Client = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+    Server = czmq:zsocket_new(Ctx, push),
+    Client = czmq:zsocket_new(Ctx, pull),
 
     ok = Config(Client, Server),
 
@@ -255,10 +261,10 @@ connect_endpoint(Port) ->
 poller(Ctx) ->
     io:format(" * poller: "),
 
-    Reader = czmq:zsocket_new(Ctx, ?ZMQ_PULL),
+    Reader = czmq:zsocket_new(Ctx, pull),
     {ok, _} = czmq:zsocket_bind(Reader, "inproc://zpoller_test"),
 
-    Writer = czmq:zsocket_new(Ctx, ?ZMQ_PUSH),
+    Writer = czmq:zsocket_new(Ctx, push),
     czmq:zsocket_set_sndhwm(Writer, 5000),
     ok = czmq:zsocket_connect(Writer, "inproc://zpoller_test"),
 
@@ -298,13 +304,13 @@ receive_messages(MsgFmt, N) when N > 0 ->
 router_dealer(Ctx) ->
     io:format(" * router_dealer: "),
 
-    Router = czmq:zsocket_new(Ctx, ?ZMQ_ROUTER),
+    Router = czmq:zsocket_new(Ctx, router),
     {ok, 0} = czmq:zsocket_bind(Router, "inproc://router_dealer"),
 
-    Dealer1 = czmq:zsocket_new(Ctx, ?ZMQ_DEALER),
+    Dealer1 = czmq:zsocket_new(Ctx, dealer),
     ok = czmq:zsocket_connect(Dealer1, "inproc://router_dealer"),
 
-    Dealer2 = czmq:zsocket_new(Ctx, ?ZMQ_DEALER),
+    Dealer2 = czmq:zsocket_new(Ctx, dealer),
     ok = czmq:zsocket_connect(Dealer2, "inproc://router_dealer"),
 
     ok = czmq:zstr_send(Dealer1, "dealer-1 says hello"),
@@ -339,6 +345,131 @@ router_dealer(Ctx) ->
     io:format("ok~n").
 
 %%--------------------------------------------------------------------
+%% @doc Tests push/pull interactions.
+%% @end
+%%--------------------------------------------------------------------
+
+push_pull(Ctx) ->
+    io:format(" * push_pull: "),
+
+    Pull = czmq:zsocket_new(Ctx, pull),
+    {ok, 0} = czmq:zsocket_bind(Pull, "inproc://push_pull"),
+
+    Push = czmq:zsocket_new(Ctx, push),
+    ok = czmq:zsocket_connect(Push, "inproc://push_pull"),
+
+    ok = czmq:zstr_send(Push, "Watson, pour me a scotch"),
+
+    timer:sleep(100),
+
+    {ok, "Watson, pour me a scotch"} = czmq:zstr_recv_nowait(Pull),
+    error = czmq:zstr_recv_nowait(Pull),
+
+    %% Pull sockets don't support send.
+
+    error = czmq:zstr_send(Pull, "Going the wrong way!"),
+
+    czmq:zsocket_destroy(Push),
+    czmq:zsocket_destroy(Pull),
+
+    io:format("ok~n").
+
+%%--------------------------------------------------------------------
+%% @doc Tests req/rep interactions.
+%% @end
+%%--------------------------------------------------------------------
+
+req_rep(Ctx) ->
+    io:format(" * req_rep: "),
+
+    Rep = czmq:zsocket_new(Ctx, rep),
+    {ok, 0} = czmq:zsocket_bind(Rep, "inproc://req_rep"),
+
+    Req1 = czmq:zsocket_new(Ctx, req),
+    ok = czmq:zsocket_connect(Req1, "inproc://req_rep"),
+
+    Req2 = czmq:zsocket_new(Ctx, req),
+    ok = czmq:zsocket_connect(Req2, "inproc://req_rep"),
+
+    %% Requests implicitly convey the client ID.
+
+    ok = czmq:zstr_send(Req1, "Watson, what's on TV?"),
+    ok = czmq:zstr_send(Req2, "Watson, what's for dinner?"),
+
+    timer:sleep(100),
+
+    %% We don't know the order the questions will arrive in, so we'll handle
+    %% both with a function that we can call twice..
+
+    HandleMsg =
+        fun({ok, "Watson, what's on TV?"}) ->
+                ok = czmq:zstr_send(Rep, "The final episode of Breaking Bad!");
+           ({ok, "Watson, what's for dinner?"}) ->
+                ok = czmq:zstr_send(Rep, "Your favorite, as always!")
+        end,
+
+    %% Handle two messages using our function - order doesn't matter.
+
+    HandleMsg(czmq:zstr_recv_nowait(Rep)),
+    HandleMsg(czmq:zstr_recv_nowait(Rep)),
+    error = czmq:zstr_recv_nowait(Rep),
+
+    %% Each req socket gets only its reply.
+
+    {ok, "The final episode of Breaking Bad!"} = czmq:zstr_recv_nowait(Req1),
+    error = czmq:zstr_recv_nowait(Req1),
+
+    {ok, "Your favorite, as always!"} = czmq:zstr_recv_nowait(Req2),
+    error = czmq:zstr_recv_nowait(Req2),
+
+    czmq:zsocket_destroy(Req1),
+    czmq:zsocket_destroy(Req2),
+    czmq:zsocket_destroy(Rep),
+
+    io:format("ok~n").
+
+%%--------------------------------------------------------------------
+%% @doc Tests pub/sub interactions.
+%% @end
+%%--------------------------------------------------------------------
+
+pub_sub(Ctx) ->
+    io:format(" * pub_sub: "),
+
+    Pub = czmq:zsocket_new(Ctx, pub),
+    {ok, 0} = czmq:zsocket_bind(Pub, "inproc://pub_sub"),
+
+    Sub1 = czmq:zsocket_new(Ctx, sub),
+    ok = czmq:zsocket_connect(Sub1, "inproc://pub_sub"),
+    ok = czmq:zsocket_set_subscribe(Sub1, "fun:"),
+
+    Sub2 = czmq:zsocket_new(Ctx, sub),
+    ok = czmq:zsocket_connect(Sub2, "inproc://pub_sub"),
+    ok = czmq:zsocket_set_subscribe(Sub2, "games:"),
+
+    %% Publish by sending to the pub socket
+
+    ok = czmq:zstr_send(Pub, "fun:Let's frolic!"),
+    ok = czmq:zstr_send(Pub, "games:Let's play scrabble!"),
+    ok = czmq:zstr_send(Pub, "other:Let's read by the fire!"),
+
+    timer:sleep(100),
+
+    %% Subscribes receive messages based on their subscription prefix.
+
+    {ok, "fun:Let's frolic!"} = czmq:zstr_recv_nowait(Sub1),
+    error = czmq:zstr_recv_nowait(Sub1),
+
+    {ok, "games:Let's play scrabble!"} = czmq:zstr_recv_nowait(Sub2),
+    error = czmq:zstr_recv_nowait(Sub2),
+
+    czmq:zsocket_destroy(Sub1),
+    czmq:zsocket_destroy(Sub2),
+    czmq:zsocket_destroy(Pub),
+
+    io:format("ok~n").
+
+%%--------------------------------------------------------------------
 %% @doc Tests sockopt API.
 %% @end
 %%--------------------------------------------------------------------
@@ -348,7 +479,7 @@ sockopts(Ctx) ->
 
     %% TODO: This is an incomplete test.
 
-    Sock = czmq:zsocket_new(Ctx, ?ZMQ_ROUTER),
+    Sock = czmq:zsocket_new(Ctx, router),
 
     %% Backlog
     100 = czmq:zsocket_backlog(Sock),
