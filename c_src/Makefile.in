@@ -1,8 +1,16 @@
 CC = @CC@
-CFLAGS = -Wall -g
+CFLAGS = -Wall -g2
 INCLUDES = -I@ERLANG_LIB_DIR_erl_interface@/include
-LFLAGS = -L@ERLANG_LIB_DIR_erl_interface@/lib
+LFLAGS = -L@ERLANG_LIB_DIR_erl_interface@/lib -lstdc++
 LIBS = -lerl_interface -lei -lpthread -lczmq
+
+BUILD_CZMQ = 
+ifeq ($(static), 1)
+	INCLUDES = -I@ERLANG_LIB_DIR_erl_interface@/include -I.libs/libsodium/include -I.libs/libzmq/include -I.libs/czmq/include
+    LIBS = -lerl_interface -lei -lpthread -lstdc++ .libs/libsodium/lib/libsodium.a .libs/libzmq/lib/libzmq.a .libs/czmq/lib/libczmq.a
+	BUILD_CZMQ = buildcmq
+endif
+
 
 SRCS = $(wildcard *.c)
 
@@ -16,7 +24,10 @@ CZMQ_BENCHMARK_OBJS = czmq_benchmark.o erl_czmq.o vector.o
 
 .PHONY: depend clean
 
-all:    $(CZMQ_PORT) $(CZMQ_BENCHMARK)
+all:    $(BUILD_CZMQ) $(CZMQ_PORT) $(CZMQ_BENCHMARK)
+
+buildcmq:
+	./build_czmq.sh
 
 $(CZMQ_PORT): $(CZMQ_PORT_OBJS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(CZMQ_PORT) $(CZMQ_PORT_OBJS) \
@@ -31,6 +42,7 @@ $(CZMQ_BENCHMARK): $(CZMQ_BENCHMARK_OBJS)
 
 clean:
 	$(RM) *.o *~ $(CZMQ_PORT) $(CZMQ_BENCHMARK)
+	./build_czmq.sh clean
 
 depend: $(SRCS)
 	makedepend -Y. $^ 2>/dev/null
