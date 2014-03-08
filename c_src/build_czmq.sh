@@ -171,7 +171,7 @@ Commands:
     clean:      clean static libs
     -?:         display usage
 
-Report bugs at <https://github.com/refuge/couch_core>.
+Report bugs at <https://github.com/gar1t/erlang-czmq>.
 EOF
 }
 
