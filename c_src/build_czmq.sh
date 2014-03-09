@@ -16,7 +16,6 @@ GNUMAKE=`which gmake 2>/dev/null || which make`
 STATICLIBS=$CORE_TOP/.libs
 DISTDIR=$CORE_TOP/.dists
 
-
 LIBSODIUM_DISTNAME=libsodium-0.4.5.tar.gz
 LIBSODIUM_SITE=https://download.libsodium.org/libsodium/releases/
 LIBSODIUM_DIR=$STATICLIBS/libsodium
@@ -71,19 +70,19 @@ build_libsodium()
     fetch $LIBSODIUM_DISTNAME $LIBSODIUM_SITE
     echo "==> build libsodium"
 
-    rm -rf $STATICLIBS/libsodium-0.4.5
-    rm -rf $LIBSODIUM_DIR
-
     cd $STATICLIBS
-    $GUNZIP -c $DISTDIR/$LIBSODIUM_DISTNAME | $TAR xf -
+    if ! test -f $STATICLIBS/libsodium-0.4.5; then
+        $GUNZIP -c $DISTDIR/$LIBSODIUM_DISTNAME | $TAR xf -
+    fi
 
     cd $STATICLIBS/libsodium-0.4.5
-    ./configure --prefix=$LIBSODIUM_DIR \
-        --disable-debug \
-        --disable-dependency-tracking \
-        --enable-static
-    make
-    make install || exit 1
+    if ! test -f config.status; then
+        ./configure --prefix=$LIBSODIUM_DIR \
+            --disable-debug \
+            --disable-dependency-tracking \
+            --enable-static
+    fi
+    make && make install || exit 1
 }
 
 build_libzmq()
@@ -91,21 +90,28 @@ build_libzmq()
     fetch $LIBZMQ_DISTNAME $LIBZMQ_SITE
     echo "==> build libzmq"
 
-    rm -rf $STATICLIBS/zeromq-4.0.3
-
     cd $STATICLIBS
-    $GUNZIP -c $DISTDIR/$LIBZMQ_DISTNAME | $TAR xf -
+    if ! test -f $STATICLIBS/zeromq-4.0.3; then
+        $GUNZIP -c $DISTDIR/$LIBZMQ_DISTNAME | $TAR xf -
+    fi
 
     cd $STATICLIBS/zeromq-4.0.3
-    env CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
-    ./configure --prefix=$LIBZMQ_DIR \
-        --disable-dependency-tracking \
-        --enable-static \
-        --with-libsodium=$LIBSODIUM_DIR
-    
-    make
-    make install || exit 1
+    if ! test -f config.status; then
+	env CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+	./configure --prefix=$LIBZMQ_DIR \
+	    --disable-dependency-tracking \
+	    --enable-static \
+	    --with-libsodium=$LIBSODIUM_DIR
+    fi
 
+    # disable -Werror (this can break builds and adds minimal value for
+    # this project as the builder can judge whether or not the warnings
+    # are problemative or not)
+    for file in `find -name Makefile`; do
+	sed -i s/-Werror//g $file
+    done
+
+    make && make install || exit 1
 }
 
 build_czmq()
@@ -113,32 +119,30 @@ build_czmq()
     fetch $CZMQ_DISTNAME $CZMQ_SITE
     echo "==> build czmq"
 
-    rm -rf $STATICLIBS/czmq-2.0.3
-
     cd $STATICLIBS
-    $GUNZIP -c $DISTDIR/$CZMQ_DISTNAME | $TAR xf -
+    if ! test -f $STATICLIBS/czmq-2.0.3; then
+        $GUNZIP -c $DISTDIR/$CZMQ_DISTNAME | $TAR xf -
+    fi
 
     cd $STATICLIBS/czmq-2.0.3
-    env CFLAGS="-I$LIBSODIUM_DIR/include" \
-        ./configure --prefix=$CZMQ_DIR \
-        --enable-static \
-        --with-libsodium=$LIBSODIUM_DIR \
-        --with-libsodium-include-dir=$LIBSODIUM_DIR/include \
-        --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib \
-        --with-libzmq=$LIBZMQ_DIR \
-        --with-libzmq-include-dir=$LIBZMQ_DIR/include \
-        --with-libzmq-lib-dir=$LIBZMQ_DIR/lib
-
-    make
-    make install || exit 1
+    if ! test -f config.status; then
+	env CFLAGS="-I$LIBSODIUM_DIR/include" \
+	    ./configure --prefix=$CZMQ_DIR \
+	    --enable-static \
+	    --with-libsodium=$LIBSODIUM_DIR \
+	    --with-libsodium-include-dir=$LIBSODIUM_DIR/include \
+	    --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib \
+	    --with-libzmq=$LIBZMQ_DIR \
+	    --with-libzmq-include-dir=$LIBZMQ_DIR/include \
+	    --with-libzmq-lib-dir=$LIBZMQ_DIR/lib
+    fi
+    make && make install || exit 1
 }
-
 
 do_build()
 {
     mkdir -p $DISTDIR
     mkdir -p $STATICLIBS
-
 
     if [ ! -f $LIBSODIUM_DIR/lib/libsodium.a ]; then
         build_libsodium
@@ -171,10 +175,9 @@ Commands:
     clean:      clean static libs
     -?:         display usage
 
-Report bugs at <https://github.com/refuge/couch_core>.
+Report bugs at <https://github.com/gar1t/erlang-czmq>.
 EOF
 }
-
 
 if [ "x$1" = "x" ]; then
     do_build 
@@ -202,6 +205,5 @@ case "$1" in
         exit 1;
         ;;
 esac
-
 
 exit 0
