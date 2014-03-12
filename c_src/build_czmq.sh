@@ -78,10 +78,15 @@ build_libsodium()
     $GUNZIP -c $DISTDIR/$LIBSODIUM_DISTNAME | $TAR xf -
 
     cd $STATICLIBS/libsodium-0.4.5
-    ./configure --prefix=$LIBSODIUM_DIR \
+    
+    env LDFLAGS="$LDFLAGS" ./configure --prefix=$LIBSODIUM_DIR \
         --disable-debug \
         --disable-dependency-tracking \
-        --enable-static
+        --disable-shared \
+        --disable-ssp \
+        --disable-pie \
+        --disable-silent-rules
+
     make
     make install || exit 1
 }
@@ -96,13 +101,21 @@ build_libzmq()
     cd $STATICLIBS
     $GUNZIP -c $DISTDIR/$LIBZMQ_DISTNAME | $TAR xf -
 
+
     cd $STATICLIBS/zeromq-4.0.3
-    env CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
-    ./configure --prefix=$LIBZMQ_DIR \
+
+    env CFLAGS="$CFLAGS" \
+        LDFLAGS="-lstdc++" \
+        LIBS="-lstdc++ $LIBSODIUM_DIR/lib/libsodium.a" \
+        CPPFLAGS="-Wno-long-long" \
+        ./configure --prefix=$LIBZMQ_DIR \
         --disable-dependency-tracking \
         --enable-static \
-        --with-libsodium=$LIBSODIUM_DIR
-    
+        --disable-shared \
+        --with-libsodium-include-dir=$LIBSODIUM_DIR/include \
+        --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib/libsodium.a \
+        --disable-silent-rules
+         
     make
     make install || exit 1
 
@@ -118,19 +131,25 @@ build_czmq()
     cd $STATICLIBS
     $GUNZIP -c $DISTDIR/$CZMQ_DISTNAME | $TAR xf -
 
+    echo $LIBZMQ_DIR
     cd $STATICLIBS/czmq-2.0.3
-    env CFLAGS="-I$LIBSODIUM_DIR/include" \
+
+    
+    env CFLAGS="-I$LIBSODIUM_DIR/include -I$LIBZMQ_DIR/include" \
+        LDFLAGS="-lstdc++" \
+        LIBS="$LIBSODIUM_DIR/lib/libsodium.a $LIBZMQ_DIR/lib/libzmq.a" \
         ./configure --prefix=$CZMQ_DIR \
+        --disable-dependency-tracking \
         --enable-static \
-        --with-libsodium=$LIBSODIUM_DIR \
+        --disable-shared \
         --with-libsodium-include-dir=$LIBSODIUM_DIR/include \
-        --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib \
-        --with-libzmq=$LIBZMQ_DIR \
+        --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib/libsodium.a \
         --with-libzmq-include-dir=$LIBZMQ_DIR/include \
-        --with-libzmq-lib-dir=$LIBZMQ_DIR/lib
+        --with-libzmq-lib-dir=$LIBZMQ_DIR/lib/libzmq.a \
+        --disable-silent-rules
 
     make
-    make install || exit 1
+    make install  || exit 1
 }
 
 
