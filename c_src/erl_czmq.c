@@ -282,7 +282,7 @@ static void handle_zsocket_disconnect(ETERM *args, erl_czmq_state *state) {
     char *endpoint = erl_iolist_to_string(endpoint_arg);
     int rc = zsocket_disconnect(socket, endpoint);
     if (rc == -1) {
-        write_term(ETERM_ERROR_CONNECT_FAILED, state);
+        write_term(ETERM_ERROR_DISCONNECT_FAILED, state);
         return;
     }
 
