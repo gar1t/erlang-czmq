@@ -294,7 +294,7 @@ receive_messages(_MsgFmt, 0) -> ok;
 receive_messages(MsgFmt, N) when N > 0 ->
     Expected = [iolist_to_binary(io_lib:format(MsgFmt, [N]))],
     receive
-        Expected -> ok
+        {_Poller, Expected} -> ok
     after
         1000 -> error({timeout, N})
     end,
