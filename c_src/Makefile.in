@@ -8,7 +8,7 @@ STATIC_DIR = $(shell pwd)/.libs
 BUILD_CZMQ = 
 ifeq ($(static), 1)
 INCLUDES = -I@ERLANG_LIB_DIR_erl_interface@/include -I$(STATIC_DIR)/libsodium/include -I$(STATIC_DIR)/libzmq/include -I$(STATIC_DIR)/czmq/include
-LIBS = -lerl_interface -lei -lpthread $(STATIC_DIR)/libsodium/lib/libsodium.a $(STATIC_DIR)/libzmq/lib/libzmq.a $(STATIC_DIR)/czmq/lib/libczmq.a -lsodium -lzmq -lczmq
+LIBS = -lerl_interface -lei -lpthread -lstdc++ $(STATIC_DIR)/libsodium/lib/libsodium.a $(STATIC_DIR)/libzmq/lib/libzmq.a $(STATIC_DIR)/czmq/lib/libczmq.a
 BUILD_CZMQ = buildcmq
 endif
 

@@ -78,13 +78,10 @@ build_libsodium()
     $GUNZIP -c $DISTDIR/$LIBSODIUM_DISTNAME | $TAR xf -
 
     cd $STATICLIBS/libsodium-0.4.5
-    
-    env LDFLAGS="$LDFLAGS" ./configure --prefix=$LIBSODIUM_DIR \
+
+    ./configure --prefix=$LIBSODIUM_DIR \
         --disable-debug \
         --disable-dependency-tracking \
-        --disable-shared \
-        --disable-ssp \
-        --disable-pie \
         --disable-silent-rules
 
     make
@@ -104,16 +101,13 @@ build_libzmq()
 
     cd $STATICLIBS/zeromq-4.0.3
 
-    env CFLAGS="$CFLAGS" \
-        LDFLAGS="-lstdc++" \
-        LIBS="-lstdc++ $LIBSODIUM_DIR/lib/libsodium.a" \
+    env CFLAGS="$CFLAGS -I$LIBSODIUM_DIR/include" \
+        LDFLAGS="-lstdc++ -L$LIBSODIUM_DIR/lib" \
         CPPFLAGS="-Wno-long-long" \
         ./configure --prefix=$LIBZMQ_DIR \
         --disable-dependency-tracking \
         --enable-static \
-        --disable-shared \
-        --with-libsodium-include-dir=$LIBSODIUM_DIR/include \
-        --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib/libsodium.a \
+        --with-libsodium=$LIBSODIUM_DIR \
         --disable-silent-rules
          
     make
@@ -133,19 +127,14 @@ build_czmq()
 
     echo $LIBZMQ_DIR
     cd $STATICLIBS/czmq-2.0.3
-
-    
+ 
     env CFLAGS="-I$LIBSODIUM_DIR/include -I$LIBZMQ_DIR/include" \
-        LDFLAGS="-lstdc++" \
-        LIBS="$LIBSODIUM_DIR/lib/libsodium.a $LIBZMQ_DIR/lib/libzmq.a" \
+        LDFLAGS="-lstdc++ -lpthread -L$LIBSODIUM_DIR/lib -L$LIBZMQ_DIR/lib" \
         ./configure --prefix=$CZMQ_DIR \
         --disable-dependency-tracking \
         --enable-static \
-        --disable-shared \
-        --with-libsodium-include-dir=$LIBSODIUM_DIR/include \
-        --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib/libsodium.a \
-        --with-libzmq-include-dir=$LIBZMQ_DIR/include \
-        --with-libzmq-lib-dir=$LIBZMQ_DIR/lib/libzmq.a \
+        --with-libsodium=$LIBSODIUM_DIR \
+        --with-libzmq=$LIBZMQ_DIR \
         --disable-silent-rules
 
     make
