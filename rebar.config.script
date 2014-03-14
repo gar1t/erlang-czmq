@@ -1,0 +1,67 @@
+%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% ex: ft=erlang ts=4 sw=4 et
+%%
+
+%% check if we build it statically or not
+IsStatic = case os:getenv("ENABLE_STATIC") of
+    "no" -> false;
+    _ -> true
+end,
+
+%% set common dor
+{ok, Cwd} = file:get_cwd(),
+StaticDir = filename:join([Cwd, "c_src", ".libs"]),
+
+%% helpers
+Include = fun(Name) ->
+        filename:join([StaticDir, Name, "include"])
+end,
+
+Lib = fun(Name, FName) ->
+        filename:join([StaticDir, Name, "lib", FName])
+end,
+
+%% set top directory environment used by build_czmq.sh
+os:putenv("CORE_TOP", filename:join([Cwd, "c_src"])),
+
+%% set the flags to build czmq_port and czmq_benchmark
+PortEnv = case IsStatic of
+    true ->
+        [{"CFLAGS", "-Wall -c -g -O2" ++
+                    " -I" ++ Include("libsodium") ++
+                    " -I" ++ Include("libzmq") ++
+                    " -I" ++ Include("czmq")},
+         {"LDFLAGS", "-lerl_interface -lei -lstdc++ -lpthread" ++
+                  " " ++ Lib("czmq", "libczmq.a") ++
+                  " " ++ Lib("libzmq", "libzmq.a") ++
+                  " " ++ Lib("libsodium", "libsodium.a") ++
+                  " -lstdc++"}];
+    false ->
+        [{"CFLAGS", "-Wall -c -g -02"},
+         {"LDFLAG", "-lerl_interface -lei -lstdc++ -lpthread -lczmq"}]
+end,
+
+%% config to build czmq_port and czmq_benchmark
+PortInfo0 = [{port_env, PortEnv},
+             {port_specs, [
+                {filename:join(["priv", "czmq-port"]),
+                                ["c_src/czmq_port.c",
+                                 "c_src/erl_czmq.c",
+                                 "c_src/vector.c"]},
+                {filename:join(["priv", "czmq-benchmark"]),
+                                ["c_src/czmq_benchmark.c",
+                                 "c_src/erl_czmq.c",
+                                 "c_src/vector.c"]}
+            ]}],
+
+PortInfo = case IsStatic of
+    true ->
+        PortInfo0 ++
+        [{pre_hooks, [{compile, "./c_src/build_czmq.sh"}]},
+         {post_hooks, [{clean, "./c_src/build_czmq.sh clean"}]}];
+    false ->
+        PortInfo0
+end,
+
+%% update the rebar config
+lists:keymerge(1,lists:keysort(1, PortInfo), lists:keysort(1, CONFIG)).
