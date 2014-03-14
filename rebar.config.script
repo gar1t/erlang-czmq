@@ -38,7 +38,7 @@ PortEnv = case IsStatic of
                   " -lstdc++"}];
     false ->
         [{"CFLAGS", "-Wall -c -g -02"},
-         {"LDFLAG", "-lerl_interface -lei -lstdc++ -lpthread -lczmq"}]
+         {"LDFLAGS", "-lerl_interface -lei -lstdc++ -lpthread -lczmq"}]
 end,
 
 %% config to build czmq_port and czmq_benchmark
