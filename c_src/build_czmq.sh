@@ -80,7 +80,7 @@ build_libsodium()
         ./configure --prefix=$LIBSODIUM_DIR \
             --disable-debug \
             --disable-dependency-tracking \
-            --enable-static
+            --disable-silent-rules
     fi
     make && make install || exit 1
 }
@@ -95,13 +95,17 @@ build_libzmq()
         $GUNZIP -c $DISTDIR/$LIBZMQ_DISTNAME | $TAR xf -
     fi
 
+
     cd $STATICLIBS/zeromq-4.0.3
     if ! test -f config.status; then
-	env CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
-	./configure --prefix=$LIBZMQ_DIR \
+	env CFLAGS="$CFLAGS -I$LIBSODIUM_DIR/include" \
+	    LDFLAGS="-lstdc++ -L$LIBSODIUM_DIR/lib" \
+	    CPPFLAGS="-Wno-long-long" \
+	    ./configure --prefix=$LIBZMQ_DIR \
 	    --disable-dependency-tracking \
 	    --enable-static \
-	    --with-libsodium=$LIBSODIUM_DIR
+	    --with-libsodium=$LIBSODIUM_DIR \
+	    --disable-silent-rules
     fi
 
     # disable -Werror (this can break builds and adds minimal value for
@@ -124,17 +128,17 @@ build_czmq()
         $GUNZIP -c $DISTDIR/$CZMQ_DISTNAME | $TAR xf -
     fi
 
+    echo $LIBZMQ_DIR
     cd $STATICLIBS/czmq-2.0.3
     if ! test -f config.status; then
-	env CFLAGS="-I$LIBSODIUM_DIR/include" \
-	    ./configure --prefix=$CZMQ_DIR \
-	    --enable-static \
-	    --with-libsodium=$LIBSODIUM_DIR \
-	    --with-libsodium-include-dir=$LIBSODIUM_DIR/include \
-	    --with-libsodium-lib-dir=$LIBSODIUM_DIR/lib \
-	    --with-libzmq=$LIBZMQ_DIR \
-	    --with-libzmq-include-dir=$LIBZMQ_DIR/include \
-	    --with-libzmq-lib-dir=$LIBZMQ_DIR/lib
+    env CFLAGS="-I$LIBSODIUM_DIR/include -I$LIBZMQ_DIR/include" \
+        LDFLAGS="-lstdc++ -lpthread -L$LIBSODIUM_DIR/lib -L$LIBZMQ_DIR/lib" \
+        ./configure --prefix=$CZMQ_DIR \
+        --disable-dependency-tracking \
+        --enable-static \
+        --with-libsodium=$LIBSODIUM_DIR \
+        --with-libzmq=$LIBZMQ_DIR \
+        --disable-silent-rules
     fi
     make && make install || exit 1
 }
