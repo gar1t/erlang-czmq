@@ -19,6 +19,7 @@
          zsocket_new/2,
          zsocket_type_str/1,
          zsocket_bind/2,
+         zsocket_unbind/2,
          zsocket_connect/2,
          zsocket_sendmem/2,
          zsocket_sendmem/3,
@@ -98,6 +99,7 @@
 -define(CMD_ZCERT_PUBLIC_TXT,       22).
 -define(CMD_ZCERT_SAVE_PUBLIC,      23).
 -define(CMD_ZCERT_DESTROY,          24).
+-define(CMD_ZSOCKET_UNBIND,         25).
 
 %% These *must* correspond to the ZSOCKOPT_XXX definitions in czmq_port.c
 -define(ZSOCKOPT_ZAP_DOMAIN, 0).
@@ -170,6 +172,9 @@ zsocket_type_str({Ctx, Socket}) ->
 
 zsocket_bind({Ctx, Socket}, Endpoint) ->
     gen_server:call(Ctx, {?CMD_ZSOCKET_BIND, {Socket, Endpoint}}, infinity).
+
+zsocket_unbind({Ctx, Socket}, Endpoint) ->
+    gen_server:call(Ctx, {?CMD_ZSOCKET_UNBIND, {Socket, Endpoint}}, infinity).
 
 zsocket_connect({Ctx, Socket}, Endpoint) ->
     gen_server:call(Ctx, {?CMD_ZSOCKET_CONNECT, {Socket, Endpoint}}, infinity).

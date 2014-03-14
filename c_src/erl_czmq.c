@@ -35,6 +35,7 @@ ETERM *ETERM_PONG;
 ETERM *ETERM_ERROR;
 ETERM *ETERM_ERROR_INVALID_SOCKET;
 ETERM *ETERM_ERROR_BIND_FAILED;
+ETERM *ETERM_ERROR_UNBIND_FAILED;
 ETERM *ETERM_ERROR_CONNECT_FAILED;
 ETERM *ETERM_ERROR_INVALID_AUTH;
 ETERM *ETERM_ERROR_INVALID_CERT;
@@ -221,6 +222,28 @@ static void handle_zsocket_bind(ETERM *args, erl_czmq_state *state) {
     erl_free(endpoint);
     erl_free_term(rc_int);
     erl_free_term(result);
+}
+
+static void handle_zsocket_unbind(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 2);
+
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
+        write_term(ETERM_ERROR_INVALID_SOCKET, state);
+        return;
+    }
+
+    ETERM *endpoint_arg = erl_element(2, args);
+    char *endpoint = erl_iolist_to_string(endpoint_arg);
+    int rc = zsocket_unbind(socket, endpoint);
+    if (rc == -1) {
+        write_term(ETERM_ERROR_UNBIND_FAILED, state);
+        return;
+    }
+
+    write_term(ETERM_OK, state);
+
+    erl_free(endpoint);
 }
 
 static void handle_zsocket_connect(ETERM *args, erl_czmq_state *state) {
@@ -814,6 +837,7 @@ static void init_eterms() {
     ETERM_ERROR = erl_mk_atom("error");
     ETERM_ERROR_INVALID_SOCKET = erl_format("{error,invalid_socket}");
     ETERM_ERROR_BIND_FAILED = erl_format("{error,bind_failed}");
+    ETERM_ERROR_UNBIND_FAILED = erl_format("{error,unbind_failed}");
     ETERM_ERROR_CONNECT_FAILED = erl_format("{error,connect_failed}");
     ETERM_ERROR_INVALID_AUTH = erl_format("{error,invalid_auth}");
     ETERM_ERROR_INVALID_CERT = erl_format("{error,invalid_cert}");
@@ -830,7 +854,7 @@ void erl_czmq_init(erl_czmq_state *state) {
 }
 
 int erl_czmq_loop(erl_czmq_state *state) {
-    int HANDLER_COUNT = 25;
+    int HANDLER_COUNT = 26;
     cmd_handler handlers[HANDLER_COUNT];
     handlers[0] = &handle_ping;
     handlers[1] = &handle_zsocket_new;
@@ -857,6 +881,7 @@ int erl_czmq_loop(erl_czmq_state *state) {
     handlers[22] = &handle_zcert_public_txt;
     handlers[23] = &handle_zcert_save_public;
     handlers[24] = &handle_zcert_destroy;
+    handlers[25] = &handle_zsocket_unbind;
 
     int cmd_len;
     byte cmd_buf[CMD_BUF_SIZE];
