@@ -45,10 +45,14 @@ zstr_send_recv(Ctx) ->
     io:format(" * zstr_send_recv: "),
 
     Writer = czmq:zsocket_new(Ctx, push),
-    {ok, Port} = czmq:zsocket_bind(Writer, "tcp://*:*"),
+    {ok, Port} = czmq:zsocket_bind(Writer, "tcp://127.0.0.1:*"),
+
+    ok = czmq:zsocket_unbind(Writer, connect_endpoint(Port)),
+    {ok, Port} = czmq:zsocket_bind(Writer, connect_endpoint(Port)),
 
     Reader = czmq:zsocket_new(Ctx, pull),
     ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
+
 
     timer:sleep(10),
 
