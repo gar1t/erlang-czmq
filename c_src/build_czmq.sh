@@ -107,14 +107,6 @@ build_libzmq()
 	    --with-libsodium=$LIBSODIUM_DIR \
 	    --disable-silent-rules
     fi
-
-    # disable -Werror (this can break builds and adds minimal value for
-    # this project as the builder can judge whether or not the warnings
-    # are problemative or not)
-    for file in `find -name Makefile`; do
-	sed -i s/-Werror//g $file
-    done
-
     make && make install || exit 1
 }
 
