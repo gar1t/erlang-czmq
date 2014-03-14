@@ -583,6 +583,7 @@ PACKAGE_URL=''
 
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
+enable_static
 ERLANG_LIB_VER_erl_interface
 ERLANG_LIB_DIR_erl_interface
 ERL
@@ -636,6 +637,7 @@ SHELL'
 ac_subst_files=''
 ac_user_opts='
 enable_option_checking
+enable_static
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1253,6 +1255,13 @@ if test -n "$ac_init_help"; then
    esac
   cat <<\_ACEOF
 
+Optional Features:
+  --disable-option-checking  ignore unrecognized --enable/--with options
+  --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
+  --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
+  --enable-static=[yes/no]
+                          enable static build [default=yes]
+
 Some influential environment variables:
   CC          C compiler command
   CFLAGS      C compiler flags
@@ -1774,6 +1783,7 @@ ac_cpp='$CPP $CPPFLAGS'
 ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
 ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
+
 
 
 ac_ext=c
@@ -2855,6 +2865,18 @@ ERLANG_LIB_VER_erl_interface=$ac_cv_erlang_lib_ver_erl_interface
 if test "$ac_cv_erlang_lib_dir_erl_interface" = "not found"; then :
 
 fi
+
+
+# Check whether --enable-static was given.
+if test "${enable_static+set}" = set; then :
+  enableval=$enable_static;
+else
+  enable_static=yes
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: enabling static builds... $enable_static" >&5
+$as_echo "$as_me: enabling static builds... $enable_static" >&6;}
+
 
 ac_config_files="$ac_config_files Makefile"
 
@@ -5170,5 +5192,4 @@ if test -n "$ac_unrecognized_opts" && test "$enable_option_checking" != no; then
   { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: unrecognized options: $ac_unrecognized_opts" >&5
 $as_echo "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
-
 

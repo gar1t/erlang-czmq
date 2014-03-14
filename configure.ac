@@ -1,6 +1,15 @@
 AC_INIT(erlang-czmq, version-0.0)
+
 AC_PROG_CC
 AC_ERLANG_CHECK_LIB([erl_interface])
+
+AC_ARG_ENABLE([static],
+              AC_HELP_STRING([--enable-static=@<:@yes/no@:>@],
+                             [enable static build [default=yes]]),
+              [],
+              [enable_static=yes])
+AC_MSG_NOTICE([enabling static build... $enable_static])
+AC_SUBST(enable_static)
+
 AC_OUTPUT(Makefile)
 AC_OUTPUT(c_src/Makefile)
-
