@@ -1,7 +1,10 @@
 #!/bin/sh
 
-CORE_TOP=`pwd`
-export CORE_TOP
+
+if [ "x$CORE_TOP" = "x" ]; then
+    CORE_TOP=`pwd`
+    export CORE_TOP
+fi
 
 CURLBIN=`which curl`
 if ! test -n "CURLBIN"; then
@@ -13,6 +16,9 @@ GUNZIP=`which gunzip`
 UNZIP=`which unzip`
 TAR=`which tar`
 GNUMAKE=`which gmake 2>/dev/null || which make`
+
+
+
 STATICLIBS=$CORE_TOP/.libs
 DISTDIR=$CORE_TOP/.dists
 
@@ -65,7 +71,7 @@ fetch()
     fi
 }
 
-build_libsodium() 
+build_libsodium()
 {
     fetch $LIBSODIUM_DISTNAME $LIBSODIUM_SITE
     echo "==> build libsodium"
@@ -176,7 +182,7 @@ EOF
 }
 
 if [ "x$1" = "x" ]; then
-    do_build 
+    do_build
 	exit 0
 fi
 
