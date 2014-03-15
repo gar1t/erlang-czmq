@@ -82,7 +82,7 @@ interval.
 Next, in a separate shell, start the sender:
 
     $ cd erlang-czmq/priv
-	$ ./czqm-benchmark send
+	$ ./czmq-benchmark send
 
 You will see the number of messages the receiver received during the time the
 sender was sending. Discard the first and last observations as they reflect
