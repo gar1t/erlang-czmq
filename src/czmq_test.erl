@@ -22,19 +22,63 @@
 
 -include("czmq.hrl").
 
+%%--------------------------------------------------------------------
+%% @doc The list of tests to execute.
+%%
+%% Add new tests here to run them as a part of the test suite.
+%%
+%% Tests must handle a single Ctx argument and signify a failure by
+%% generating an exception. This is usually done by letting a pattern
+%% match fail - but any exception will be counted as a failed test.
+%%
+%% If a test does not generate an exception, it is considered to have
+%% passed.
+%%
+%% @spec tests() -> [fun((Ctx) -> any())]
+%% @end
+%%--------------------------------------------------------------------
+
+tests() ->
+    [fun zstr_send_recv/1,
+     fun sendmem_framerecv/1,
+     fun zauth/1,
+     fun poller/1,
+     fun router_dealer/1,
+     fun push_pull/1,
+     fun req_rep/1,
+     fun pub_sub/1,
+     fun sockopts/1].
+
+%%--------------------------------------------------------------------
+%% @doc Run all tests.
+%% @end
+%%--------------------------------------------------------------------
+
 test() ->
     io:format("Testing erlang-czmq...~n"),
     {ok, Ctx} = czmq:start_link(),
-    zstr_send_recv(Ctx),
-    sendmem_framerecv(Ctx),
-    zauth(Ctx),
-    poller(Ctx),
-    router_dealer(Ctx),
-    push_pull(Ctx),
-    req_rep(Ctx),
-    pub_sub(Ctx),
-    sockopts(Ctx),
+    TestResults = run_tests(tests(), Ctx),
+    report_test_results(TestResults),
     czmq:terminate(Ctx).
+
+run_tests(Tests, Ctx) ->
+    run_tests(Tests, Ctx, {0, 0}).
+
+run_tests([Test|Rest], Ctx, ResultsAcc) ->
+    Result = (catch Test(Ctx)),
+    run_tests(Rest, Ctx, handle_test_result(Result, ResultsAcc));
+run_tests([], _Ctx, ResultsAcc) ->
+    ResultsAcc.
+
+handle_test_result({'EXIT', Err}, {Passed, Failed}) ->
+    io:format("FAILED~n   ~p~n", [Err]),
+    {Passed, Failed + 1};
+handle_test_result(_, {Passed, Failed}) ->
+    {Passed + 1, Failed}.
+
+report_test_results({Passed, Failed}) ->
+    io:format("PASSED: ~b~n", [Passed]),
+    io:format("FAILED: ~b~n", [Failed]).
 
 %%--------------------------------------------------------------------
 %% @doc Tests basic zstr send and receive.

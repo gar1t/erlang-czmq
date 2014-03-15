@@ -19,6 +19,19 @@ implemented as a C Port to ensure that crashes don't effect the Erlang VM.
 The API mirrors that of CZMQ with all functions being available through the
 `czmq`module.
 
+## Building erlang-czmq
+
+    $ git clone https://github.com/gar1t/erlang-czmq.git
+	$ cd erlang-czmq
+	$ ./configure
+	$ make check
+
+This will build the library and run the tests.
+
+Please report and problems by opening an issue here:
+
+https://github.com/gar1t/erlang-czmq/issues
+
 ### Port to CZMQ Mapping
 
 The port manages a single ZMQ context. All context managed state is associated
@@ -99,6 +112,7 @@ Next,
 
 ### Benchark Summary - Lenovo X220 at 2.7 GHz
 
+    +---------------------------+-------------+---+
     | Recv / Send               | Average MPS | N |
 	|---------------------------|-------------|---|
     | C / C                     |     1190500 | 5 |
@@ -108,3 +122,4 @@ Next,
 	| erlang-czmq / C           |       10126 | 5 |
 	| erlzmq / erlzmq           |      134234 | 5 |
 	| erlang-czmq / erlang-czmq |        9614 | 5 |
+    +---------------------------+-------------+---+
