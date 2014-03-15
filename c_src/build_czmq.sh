@@ -88,8 +88,6 @@ build_libsodium()
         ./configure --prefix=$LIBSODIUM_DIR \
             --disable-debug \
             --disable-dependency-tracking \
-            --disable-ssp \
-            --disable-pie \
             --disable-silent-rules
     fi
     make && make install || exit 1
