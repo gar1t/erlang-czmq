@@ -41,6 +41,12 @@ ETERM *ETERM_ERROR_DISCONNECT_FAILED;
 ETERM *ETERM_ERROR_INVALID_AUTH;
 ETERM *ETERM_ERROR_INVALID_CERT;
 
+#define ZCTX_SET_IOTHREADS 0
+#define ZCTX_SET_LINGER 1
+#define ZCTX_SET_PIPEHWM 2
+#define ZCTX_SET_SNDHWM 3
+#define ZCTX_SET_RCVHWM 4
+
 #define ZSOCKOPT_ZAP_DOMAIN 0
 #define ZSOCKOPT_PLAIN_SERVER 1
 #define ZSOCKOPT_PLAIN_USERNAME 2
@@ -155,6 +161,38 @@ static int save_socket(void *socket, erl_czmq_state *state) {
         }
     }
     assert(0);
+}
+
+static void handle_zctx_set_int(ETERM *args, erl_czmq_state *state) {
+    assert_tuple_size(args, 2);
+
+    ETERM *opt_arg = erl_element(1, args);
+    int opt = ERL_INT_VALUE(opt_arg);
+
+    ETERM *val_arg = erl_element(2, args);
+    int val = ERL_INT_VALUE(val_arg);
+
+    switch(opt) {
+    case ZCTX_SET_IOTHREADS:
+        zctx_set_iothreads(state->ctx, val);
+        break;
+    case ZCTX_SET_LINGER:
+        zctx_set_linger(state->ctx, val);
+        break;
+    case ZCTX_SET_PIPEHWM:
+        zctx_set_pipehwm(state->ctx, val);
+        break;
+    case ZCTX_SET_SNDHWM:
+        zctx_set_sndhwm(state->ctx, val);
+        break;
+    case ZCTX_SET_RCVHWM:
+        zctx_set_rcvhwm(state->ctx, val);
+        break;
+    default:
+        assert(0);
+    }
+
+    write_term(ETERM_OK, state);
 }
 
 static void handle_zsocket_new(ETERM *args, erl_czmq_state *state) {
@@ -878,7 +916,7 @@ void erl_czmq_init(erl_czmq_state *state) {
 }
 
 int erl_czmq_loop(erl_czmq_state *state) {
-    int HANDLER_COUNT = 27;
+    int HANDLER_COUNT = 28;
     cmd_handler handlers[HANDLER_COUNT];
     handlers[0] = &handle_ping;
     handlers[1] = &handle_zsocket_new;
@@ -907,6 +945,7 @@ int erl_czmq_loop(erl_czmq_state *state) {
     handlers[24] = &handle_zcert_destroy;
     handlers[25] = &handle_zsocket_unbind;
     handlers[26] = &handle_zsocket_disconnect;
+    handlers[27] = &handle_zctx_set_int;
 
     int cmd_len;
     byte cmd_buf[CMD_BUF_SIZE];

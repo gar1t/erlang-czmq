@@ -16,6 +16,11 @@
 
 -export([start/0, start_link/0,
          ping/1, ping/2,
+         zctx_set_iothreads/2,
+         zctx_set_linger/2,
+         zctx_set_pipehwm/2,
+         zctx_set_sndhwm/2,
+         zctx_set_rcvhwm/2,
          zsocket_new/2,
          zsocket_type_str/1,
          zsocket_bind/2,
@@ -102,6 +107,15 @@
 -define(CMD_ZCERT_DESTROY,          24).
 -define(CMD_ZSOCKET_UNBIND,         25).
 -define(CMD_ZSOCKET_DISCONNECT,     26).
+-define(CMD_ZCTX_SET,               27).
+
+
+%% These *must* correspond to the ZCTX_SET_XXX definitions in czmq_port.c
+-define(ZCTX_SET_IOTHREADS, 0).
+-define(ZCTX_SET_LINGER, 1).
+-define(ZCTX_SET_PIPEHWM, 2).
+-define(ZCTX_SET_SNDHWM, 3).
+-define(ZCTX_SET_RCVHWM, 4).
 
 %% These *must* correspond to the ZSOCKOPT_XXX definitions in czmq_port.c
 -define(ZSOCKOPT_ZAP_DOMAIN, 0).
@@ -115,6 +129,9 @@
 -define(ZSOCKOPT_RCVHWM, 8).
 -define(ZSOCKOPT_SUBSCRIBE, 9).
 -define(ZSOCKOPT_UNSUBSCRIBE, 10).
+
+
+
 
 %%%===================================================================
 %%% Start / init
@@ -147,6 +164,29 @@ ping(Ctx) ->
 
 ping(Ctx, Timeout) ->
     gen_server:call(Ctx, {?CMD_PING, {}}, Timeout).
+
+
+zctx_set_iothreads(Ctx, Val) when is_integer(Val) ->
+    zctx_set_int(Ctx, ?ZCTX_SET_IOTHREADS, Val).
+
+zctx_set_linger(Ctx, Val) when is_integer(Val) ->
+    zctx_set_int(Ctx, ?ZCTX_SET_LINGER, Val).
+
+zctx_set_pipehwm(Ctx, Val) when is_integer(Val) ->
+    zctx_set_int(Ctx, ?ZCTX_SET_PIPEHWM, Val).
+
+zctx_set_sndhwm(Ctx, Val) when is_integer(Val) ->
+    zctx_set_int(Ctx, ?ZCTX_SET_SNDHWM, Val).
+
+zctx_set_rcvhwm(Ctx, Val) when is_integer(Val) ->
+    zctx_set_int(Ctx, ?ZCTX_SET_RCVHWM, Val).
+
+
+zctx_set_int(Ctx, Opt, Val) when is_integer(Val) ->
+    Args = {Opt, Val},
+    gen_server:call(Ctx, {?CMD_ZCTX_SET, Args}, infinity).
+
+
 
 zsocket_new(Ctx, Type) when is_atom(Type) ->
     zsocket_new(Ctx, atom_to_socket_type(Type));
