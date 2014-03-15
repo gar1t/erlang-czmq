@@ -16,3 +16,6 @@ test:
 opts=
 shell: app
 	erl -pa ebin -s czmq_reloader ${opts}
+
+check: app
+	 erl -eval "czmq_test:test()" -s init stop -noshell -pa ebin
