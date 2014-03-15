@@ -26,7 +26,7 @@ LIBSODIUM_DISTNAME=libsodium-0.4.5.tar.gz
 LIBSODIUM_SITE=https://download.libsodium.org/libsodium/releases/
 LIBSODIUM_DIR=$STATICLIBS/libsodium
 
-LIBZMQ_DISTNAME=zeromq-4.0.3.tar.gz
+LIBZMQ_DISTNAME=zeromq-4.0.4.tar.gz
 LIBZMQ_SITE=http://download.zeromq.org
 LIBZMQ_DIR=$STATICLIBS/libzmq
 
@@ -99,12 +99,12 @@ build_libzmq()
     echo "==> build libzmq"
 
     cd $STATICLIBS
-    if ! test -f $STATICLIBS/zeromq-4.0.3; then
+    if ! test -f $STATICLIBS/zeromq-4.0.4; then
         $GUNZIP -c $DISTDIR/$LIBZMQ_DISTNAME | $TAR xf -
     fi
 
 
-    cd $STATICLIBS/zeromq-4.0.3
+    cd $STATICLIBS/zeromq-4.0.4
     if ! test -f config.status; then
 	env CFLAGS="$CFLAGS -I$LIBSODIUM_DIR/include" \
 	    LDFLAGS="-L$LIBSODIUM_DIR/lib -lstdc++ " \
