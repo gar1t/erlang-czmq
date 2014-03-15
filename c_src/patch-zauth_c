@@ -1,0 +1,10 @@
+--- src/zauth.c.orig	2014-03-15 08:58:59.983422257 +0100
++++ src/zauth.c	2014-03-15 09:00:16.591426090 +0100
+@@ -34,6 +34,7 @@
+ @end
+ */
+ 
++#include "platform.h"
+ #include "../include/czmq.h"
+ 
+ //  Structure of our class
