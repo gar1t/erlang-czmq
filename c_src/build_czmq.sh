@@ -26,7 +26,7 @@ LIBSODIUM_DISTNAME=libsodium-0.4.5.tar.gz
 LIBSODIUM_SITE=https://download.libsodium.org/libsodium/releases/
 LIBSODIUM_DIR=$STATICLIBS/libsodium
 
-LIBZMQ_DISTNAME=zeromq-4.0.3.tar.gz
+LIBZMQ_DISTNAME=zeromq-4.0.4.tar.gz
 LIBZMQ_SITE=http://download.zeromq.org
 LIBZMQ_DIR=$STATICLIBS/libzmq
 
@@ -39,7 +39,8 @@ CZMQ_DIR=$STATICLIBS/czmq
 [ "$SYSTEM" ] || SYSTEM=`(uname -s) 2>/dev/null`  || SYSTEM="unknown"
 [ "$BUILD" ] || VERSION=`(uname -v) 2>/dev/null` || VERSION="unknown"
 
-# find arcg
+# find arch
+PATCH=patch
 case "$SYSTEM" in
     Linux)
         ARCH=`arch 2>/dev/null`
@@ -52,6 +53,7 @@ case "$SYSTEM" in
         ;;
     Solaris)
         ARCH=`(uname -p) 2>/dev/null`
+        PATCH=gpatch
         ;;
     *)
         ARCH="unknown"
@@ -97,15 +99,15 @@ build_libzmq()
     echo "==> build libzmq"
 
     cd $STATICLIBS
-    if ! test -f $STATICLIBS/zeromq-4.0.3; then
+    if ! test -f $STATICLIBS/zeromq-4.0.4; then
         $GUNZIP -c $DISTDIR/$LIBZMQ_DISTNAME | $TAR xf -
     fi
 
 
-    cd $STATICLIBS/zeromq-4.0.3
+    cd $STATICLIBS/zeromq-4.0.4
     if ! test -f config.status; then
 	env CFLAGS="$CFLAGS -I$LIBSODIUM_DIR/include" \
-	    LDFLAGS="-lstdc++ -L$LIBSODIUM_DIR/lib" \
+	    LDFLAGS="-L$LIBSODIUM_DIR/lib -lstdc++ " \
 	    CPPFLAGS="-Wno-long-long" \
 	    ./configure --prefix=$LIBZMQ_DIR \
 	    --disable-dependency-tracking \
@@ -128,9 +130,13 @@ build_czmq()
 
     echo $LIBZMQ_DIR
     cd $STATICLIBS/czmq-2.0.3
+
+    $PATCH -p0 -i $CORE_TOP/patch-zauth_c || echo "skipping patch"
+    $PATCH -p0 -i $CORE_TOP/patch-zsockopt_c || echo "skipping patch"
+
     if ! test -f config.status; then
     env CFLAGS="-I$LIBSODIUM_DIR/include -I$LIBZMQ_DIR/include" \
-        LDFLAGS="-lstdc++ -lpthread -L$LIBSODIUM_DIR/lib -L$LIBZMQ_DIR/lib" \
+        LDFLAGS="-lstdc++ -lpthread -L$LIBSODIUM_DIR/lib -L$LIBZMQ_DIR/lib -lstdc++" \
         ./configure --prefix=$CZMQ_DIR \
         --disable-dependency-tracking \
         --enable-static \

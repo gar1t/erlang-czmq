@@ -9,6 +9,10 @@ app::
 clean::
 	cd c_src; make clean
 
+ERL ?= erl
+test:
+	@$(ERL) -pa ebin -noshell -eval 'czmq_test:test()' -s init stop
+
 opts=
 shell: app
 	erl -pa ebin -s czmq_reloader ${opts}
