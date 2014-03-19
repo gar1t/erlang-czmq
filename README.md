@@ -123,3 +123,31 @@ Next,
 	| erlzmq / erlzmq           |      134234 | 5 |
 	| erlang-czmq / erlang-czmq |        9614 | 5 |
     +---------------------------+-------------+---+
+
+## Versioning Scheme
+
+This project uses the traditional versioning scheme:
+
+    MAJOR "." MINOR "." REVISION
+
+After major version "1", changes to Major represent potential API changes.
+
+Minor version increments represent major milestones and will be documented.
+
+Revision increments represent minor milestones including bug fixes.
+
+Versions will be indicated using tags.
+
+Changes are documented in CHANGES.md.
+
+## Releases
+
+This project doesn't make formal releases by instead tags git commits using the
+versioning scheme above.
+
+To increment a revision:
+
+1. Change the `vsn` in src/czmq.app.src
+2. Add an entry to CHANGES.md with reasonable detail to help users understand
+   what _changed_ in between the new documented release and the previous
+   documented release
