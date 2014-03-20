@@ -30,7 +30,7 @@ LIBZMQ_DISTNAME=zeromq-4.0.4.tar.gz
 LIBZMQ_SITE=http://download.zeromq.org
 LIBZMQ_DIR=$STATICLIBS/libzmq
 
-CZMQ_DISTNAME=czmq-2.0.3.tar.gz
+CZMQ_DISTNAME=czmq-2.1.0.tar.gz
 CZMQ_SITE=http://download.zeromq.org/
 CZMQ_DIR=$STATICLIBS/czmq
 
@@ -124,15 +124,12 @@ build_czmq()
     echo "==> build czmq"
 
     cd $STATICLIBS
-    if ! test -f $STATICLIBS/czmq-2.0.3; then
+    if ! test -f $STATICLIBS/czmq-2.1.0; then
         $GUNZIP -c $DISTDIR/$CZMQ_DISTNAME | $TAR xf -
     fi
 
     echo $LIBZMQ_DIR
-    cd $STATICLIBS/czmq-2.0.3
-
-    $PATCH -p0 -i $CORE_TOP/patch-zauth_c || echo "skipping patch"
-    $PATCH -p0 -i $CORE_TOP/patch-zsockopt_c || echo "skipping patch"
+    cd $STATICLIBS/czmq-2.1.0
 
     if ! test -f config.status; then
     env CFLAGS="-I$LIBSODIUM_DIR/include -I$LIBZMQ_DIR/include" \
