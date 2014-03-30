@@ -1,6 +1,5 @@
 #!/bin/sh
 
-
 if [ "x$CORE_TOP" = "x" ]; then
     CORE_TOP=`pwd`
     export CORE_TOP
@@ -17,20 +16,21 @@ UNZIP=`which unzip`
 TAR=`which tar`
 GNUMAKE=`which gmake 2>/dev/null || which make`
 
-
-
 STATICLIBS=$CORE_TOP/.libs
 DISTDIR=$CORE_TOP/.dists
 
-LIBSODIUM_DISTNAME=libsodium-0.4.5.tar.gz
+LIBSODIUM_VER=0.4.5
+LIBSODIUM_DISTNAME=libsodium-${LIBSODIUM_VER}.tar.gz
 LIBSODIUM_SITE=https://download.libsodium.org/libsodium/releases/
 LIBSODIUM_DIR=$STATICLIBS/libsodium
 
-LIBZMQ_DISTNAME=zeromq-4.0.4.tar.gz
+LIBZMQ_VER=4.0.4
+LIBZMQ_DISTNAME=zeromq-${LIBZMQ_VER}.tar.gz
 LIBZMQ_SITE=http://download.zeromq.org
 LIBZMQ_DIR=$STATICLIBS/libzmq
 
-CZMQ_DISTNAME=czmq-2.1.0.tar.gz
+CZMQ_VER=2.1.0
+CZMQ_DISTNAME=czmq-${CZMQ_VER}.tar.gz
 CZMQ_SITE=http://download.zeromq.org/
 CZMQ_DIR=$STATICLIBS/czmq
 
@@ -79,11 +79,11 @@ build_libsodium()
     echo "==> build libsodium"
 
     cd $STATICLIBS
-    if ! test -f $STATICLIBS/libsodium-0.4.5; then
+    if ! test -f $STATICLIBS/libsodium-${LIBSODIUM_VER}; then
         $GUNZIP -c $DISTDIR/$LIBSODIUM_DISTNAME | $TAR xf -
     fi
 
-    cd $STATICLIBS/libsodium-0.4.5
+    cd $STATICLIBS/libsodium-${LIBSODIUM_VER}
     if ! test -f config.status; then
         ./configure --prefix=$LIBSODIUM_DIR \
             --disable-debug \
@@ -99,12 +99,11 @@ build_libzmq()
     echo "==> build libzmq"
 
     cd $STATICLIBS
-    if ! test -f $STATICLIBS/zeromq-4.0.4; then
+    if ! test -f $STATICLIBS/zeromq-${LIBZMQ_VER}; then
         $GUNZIP -c $DISTDIR/$LIBZMQ_DISTNAME | $TAR xf -
     fi
 
-
-    cd $STATICLIBS/zeromq-4.0.4
+    cd $STATICLIBS/zeromq-${LIBZMQ_VER}
     if ! test -f config.status; then
 	env CFLAGS="$CFLAGS -I$LIBSODIUM_DIR/include" \
 	    LDFLAGS="-L$LIBSODIUM_DIR/lib -lstdc++ " \
@@ -124,12 +123,12 @@ build_czmq()
     echo "==> build czmq"
 
     cd $STATICLIBS
-    if ! test -f $STATICLIBS/czmq-2.1.0; then
+    if ! test -f $STATICLIBS/czmq-${CZMQ_VER}; then
         $GUNZIP -c $DISTDIR/$CZMQ_DISTNAME | $TAR xf -
     fi
 
     echo $LIBZMQ_DIR
-    cd $STATICLIBS/czmq-2.1.0
+    cd $STATICLIBS/czmq-${CZMQ_VER}
 
     if ! test -f config.status; then
     env CFLAGS="-I$LIBSODIUM_DIR/include -I$LIBZMQ_DIR/include" \
