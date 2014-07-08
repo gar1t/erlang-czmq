@@ -34,6 +34,7 @@
          zsocket_sndhwm/1,
          zsocket_rcvhwm/1,
          zsocket_backlog/1,
+         zsocket_identity/1,
          zsocket_set_zap_domain/2,
          zsocket_set_plain_server/2,
          zsocket_set_plain_username/2,
@@ -43,6 +44,7 @@
          zsocket_set_sndhwm/2,
          zsocket_set_rcvhwm/2,
          zsocket_set_backlog/2,
+         zsocket_set_identity/2,
          zsocket_set_subscribe/2,
          zsocket_set_unsubscribe/2,
          zstr_send/2,
@@ -129,6 +131,7 @@
 -define(ZSOCKOPT_RCVHWM, 8).
 -define(ZSOCKOPT_SUBSCRIBE, 9).
 -define(ZSOCKOPT_UNSUBSCRIBE, 10).
+-define(ZSOCKOPT_IDENTITY, 11).
 
 
 
@@ -256,6 +259,9 @@ zsocket_destroy({Ctx, Socket}) ->
 sockopt_int({Ctx, Socket}, Opt) ->
     gen_server:call(Ctx, {?CMD_ZSOCKOPT_GET_INT, {Socket, Opt}}, infinity).
 
+sockopt_str({Ctx, Socket}, Opt) ->
+    gen_server:call(Ctx, {?CMD_ZSOCKOPT_GET_STR, {Socket, Opt}}, infinity).
+
 zsocket_sndhwm(Sock) ->
     sockopt_int(Sock, ?ZSOCKOPT_SNDHWM).
 
@@ -264,6 +270,9 @@ zsocket_rcvhwm(Sock) ->
 
 zsocket_backlog(Sock) ->
     sockopt_int(Sock, ?ZSOCKOPT_BACKLOG).
+
+zsocket_identity(Sock) ->
+    sockopt_str(Sock, ?ZSOCKOPT_IDENTITY).
 
 sockopt_set_str({Ctx, Socket}, Opt, Str) when is_list(Str) ->
     Args = {Socket, Opt, Str},
@@ -303,6 +312,9 @@ zsocket_set_rcvhwm(Sock, Hwm) ->
 
 zsocket_set_backlog(Sock, Backlog) ->
     sockopt_set_int(Sock, ?ZSOCKOPT_BACKLOG, Backlog).
+
+zsocket_set_identity(Sock, Identity) ->
+    sockopt_set_str(Sock, ?ZSOCKOPT_IDENTITY, Identity).
 
 zsocket_set_subscribe(Sock, Subscribe) ->
     sockopt_set_str(Sock, ?ZSOCKOPT_SUBSCRIBE, Subscribe).
