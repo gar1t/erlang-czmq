@@ -31,7 +31,7 @@ PortEnv = case IsStatic of
                     " -I" ++ Include("libsodium") ++
                     " -I" ++ Include("libzmq") ++
                     " -I" ++ Include("czmq")},
-         {"LDFLAGS", "-lerl_interface -lei -lstdc++ -lpthread" ++
+         {"LDFLAGS", "-lerl_interface -lei -lstdc++ -lpthread -lrt" ++
                   " " ++ Lib("czmq", "libczmq.a") ++
                   " " ++ Lib("libzmq", "libzmq.a") ++
                   " " ++ Lib("libsodium", "libsodium.a") ++
