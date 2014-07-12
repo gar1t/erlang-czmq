@@ -1,7 +1,7 @@
 CC = @CC@
 CFLAGS = -Wall -g2
 INCLUDES = -I@ERLANG_LIB_DIR_erl_interface@/include
-LFLAGS = -L@ERLANG_LIB_DIR_erl_interface@/lib -lstdc++
+LFLAGS = -L@ERLANG_LIB_DIR_erl_interface@/lib -lstdc++ -lrt
 LIBS = -lerl_interface -lei -lpthread -lczmq
 STATIC_DIR = $(shell pwd)/.libs
 BUILD_CZMQ = 
