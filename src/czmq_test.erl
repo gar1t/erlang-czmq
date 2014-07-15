@@ -356,9 +356,11 @@ router_dealer(Ctx) ->
     {ok, 0} = czmq:zsocket_bind(Router, "inproc://router_dealer"),
 
     Dealer1 = czmq:zsocket_new(Ctx, dealer),
+    ok = czmq:zsocket_set_identity(Dealer1, "dealer-1"),
     ok = czmq:zsocket_connect(Dealer1, "inproc://router_dealer"),
 
     Dealer2 = czmq:zsocket_new(Ctx, dealer),
+    ok = czmq:zsocket_set_identity(Dealer2, "dealer-2"),
     ok = czmq:zsocket_connect(Dealer2, "inproc://router_dealer"),
 
     ok = czmq:zstr_send(Dealer1, "dealer-1 says hello"),
@@ -542,6 +544,11 @@ sockopts(Ctx) ->
     1000 = czmq:zsocket_rcvhwm(Sock),
     czmq:zsocket_set_rcvhwm(Sock, 3000),
     3000 = czmq:zsocket_rcvhwm(Sock),
+
+    %% Identity
+    "" = czmq:zsocket_identity(Sock),
+    czmq:zsocket_set_identity(Sock, "Watson"),
+    "Watson" = czmq:zsocket_identity(Sock),
 
     czmq:zsocket_destroy(Sock),
 

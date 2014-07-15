@@ -62,6 +62,7 @@ ETERM *ETERM_ERROR_INVALID_CERT;
 #define ZSOCKOPT_RCVHWM 8
 #define ZSOCKOPT_SUBSCRIBE 9
 #define ZSOCKOPT_UNSUBSCRIBE 10
+#define ZSOCKOPT_IDENTITY 11
 
 enum cmd_type {
     CMD_PING,
@@ -445,6 +446,9 @@ static void handle_zsockopt_get_str(ETERM *args, erl_czmq_state *state) {
     case ZSOCKOPT_CURVE_SERVERKEY:
         val = zsocket_curve_serverkey(socket);
         break;
+    case ZSOCKOPT_IDENTITY:
+        val = zsocket_identity(socket);
+        break;
     default:
         assert(0);
     }
@@ -528,6 +532,9 @@ static void handle_zsockopt_set_str(ETERM *args, erl_czmq_state *state) {
         break;
     case ZSOCKOPT_SUBSCRIBE:
         zsocket_set_subscribe(socket, val);
+        break;
+    case ZSOCKOPT_IDENTITY:
+        zsocket_set_identity(socket, val);
         break;
     case ZSOCKOPT_UNSUBSCRIBE:
         zsocket_set_unsubscribe(socket, val);
