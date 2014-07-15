@@ -64,48 +64,6 @@ ETERM *ETERM_ERROR_INVALID_CERT;
 #define ZSOCKOPT_UNSUBSCRIBE 10
 #define ZSOCKOPT_IDENTITY 11
 
-enum cmd_type {
-    CMD_PING,
-    CMD_ZSOCKET_NEW,
-    CMD_ZSOCKET_TYPE_STR,
-    CMD_ZSOCKET_BIND,
-    CMD_ZSOCKET_CONNECT,
-    CMD_ZSOCKET_SENDMEM,
-    CMD_ZSOCKET_DESTROY,
-    CMD_ZSOCKOPT_GET_STR,
-    CMD_ZSOCKOPT_GET_INT,
-    CMD_ZSOCKOPT_SET_STR,
-    CMD_ZSOCKOPT_SET_INT,
-    CMD_ZSTR_SEND,
-    CMD_ZSTR_RECV_NOWAIT,
-    CMD_ZFRAME_RECV_NOWAIT,
-    CMD_ZAUTH_NEW,
-    CMD_ZAUTH_DENY,
-    CMD_ZAUTH_ALLOW,
-    CMD_ZAUTH_CONFIGURE_PLAIN,
-    CMD_ZAUTH_CONFIGURE_CURVE,
-    CMD_ZAUTH_DESTROY, 
-    CMD_ZCERT_NEW,
-    CMD_ZCERT_APPLY,
-    CMD_ZCERT_PUBLIC_TXT,
-    CMD_ZCERT_SAVE_PUBLIC,
-    CMD_ZCERT_DESTROY,
-    CMD_ZSOCKET_UNBIND,
-    CMD_ZSOCKET_DISCONNECT,
-    CMD_ZCTX_SET,
-    CMD_ZSOCKET_POLLER_NEW,
-    CMD_ZSOCKET_POLLER_ADD,
-    CMD_ZSOCKET_POLLER_DESTROY,
-
-    // Should be always last
-    CMD_COUNT
-}
-
-enum erl_zpoller_mode {
-    ZPOLLER_PERMANENT,
-    ZPOLLER_TEMPORARY
-}
-
 #define SUCCESS 0
 #define EXIT_OK 0
 #define EXIT_PORT_READ_ERROR 253
@@ -115,13 +73,22 @@ enum erl_zpoller_mode {
 #define MAX_SOCKETS 999999
 #define MAX_CERTS 999999
 
-#define assert_tuple_size(term, size)
+#define assert_tuple_size(term, size)   \
     do {                                \
         assert(ERL_IS_TUPLE(term));     \
         assert(erl_size(term) == size); \
     } while(0)
 
-typedef void (*cmd_handler)(ETERM*, erl_czmq_state*);
+typedef void (*cmd_handler)(EV_P_ ETERM*);
+
+#define ERL_ZPOLLER_AFTER 1
+#define ERL_ZPOLLER_REPEAT 0
+
+typedef struct erl_zpoller {
+    ev_timer *watcher;
+    zpoller_t *poller;
+    ETERM *id;
+} erl_zpoller_t;
 
 static int read_exact(byte *buf, int len)
 {
@@ -195,8 +162,32 @@ static void write_term(ETERM *term, erl_czmq_state *state) {
     write_cmd(state->reply_buf, len);
 }
 
-static void handle_ping(ETERM *args, erl_czmq_state *state) {
+static void handle_ping(EV_P_ ETERM *args) {
+    erl_czmq_state *state = ev_userdata(EV_A);
     write_term(ETERM_PONG, state);
+}
+
+#define POLLER_ID_LEN 80
+static char *save_poller(void *poller, erl_czmq_state *state) {
+    char *key = malloc(sizeof(char) * POLLER_ID_LEN);
+    if (!key)
+        return NULL;
+    
+    sprintf(key, "%p", poller);
+    int res = zhash_insert(state->pollers, key, poller);
+    if (res)
+        return NULL;
+
+    return key;
+}
+
+static erl_zpoller_t *delete_poller(char *key, erl_czmq_state *state) {
+    erl_zpoller_t *poller = zhash_lookup(state->pollers, key);
+    if (!poller)
+        return NULL;
+
+    zhash_delete(state->pollers, key);
+    return poller;
 }
 
 static int save_socket(void *socket, erl_czmq_state *state) {
@@ -210,7 +201,7 @@ static int save_socket(void *socket, erl_czmq_state *state) {
     assert(0);
 }
 
-static void handle_zctx_set_int(ETERM *args, erl_czmq_state *state) {
+static void handle_zctx_set_int(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
     ETERM *opt_arg = erl_element(1, args);
@@ -219,6 +210,7 @@ static void handle_zctx_set_int(ETERM *args, erl_czmq_state *state) {
     ETERM *val_arg = erl_element(2, args);
     int val = ERL_INT_VALUE(val_arg);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     switch(opt) {
     case ZCTX_SET_IOTHREADS:
         zctx_set_iothreads(state->ctx, val);
@@ -242,11 +234,12 @@ static void handle_zctx_set_int(ETERM *args, erl_czmq_state *state) {
     write_term(ETERM_OK, state);
 }
 
-static void handle_zsocket_new(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_new(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
     ETERM *type_arg = erl_element(1, args);
     int type = ERL_INT_VALUE(type_arg);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = zsocket_new(state->ctx, type);
     assert(socket);
 
@@ -264,9 +257,10 @@ static void *socket_from_arg(ETERM *args, int arg_pos, erl_czmq_state *state) {
     return vector_get(&state->sockets, int_arg(args, arg_pos));
 }
 
-static void handle_zsocket_type_str(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_type_str(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -281,9 +275,10 @@ static void handle_zsocket_type_str(ETERM *args, erl_czmq_state *state) {
     erl_free_term(reply);
 }
 
-static void handle_zsocket_bind(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_bind(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -310,9 +305,10 @@ static void handle_zsocket_bind(ETERM *args, erl_czmq_state *state) {
     erl_free_term(result);
 }
 
-static void handle_zsocket_unbind(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_unbind(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -332,9 +328,10 @@ static void handle_zsocket_unbind(ETERM *args, erl_czmq_state *state) {
     erl_free(endpoint);
 }
 
-static void handle_zsocket_connect(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_connect(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -354,9 +351,10 @@ static void handle_zsocket_connect(ETERM *args, erl_czmq_state *state) {
     erl_free(endpoint);
 }
 
-static void handle_zsocket_disconnect(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_disconnect(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -376,9 +374,10 @@ static void handle_zsocket_disconnect(ETERM *args, erl_czmq_state *state) {
     erl_free(endpoint);
 }
 
-static void handle_zsocket_sendmem(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_sendmem(EV_P_ ETERM *args) {
     assert_tuple_size(args, 3);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -404,9 +403,10 @@ static void clear_socket(int socket_index, erl_czmq_state *state) {
     vector_set(&state->sockets, socket_index, NULL);
 }
 
-static void handle_zsocket_destroy(ETERM *args, erl_czmq_state *state) {
+static void handle_zsocket_destroy(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -419,9 +419,10 @@ static void handle_zsocket_destroy(ETERM *args, erl_czmq_state *state) {
     write_term(ETERM_OK, state);
 }
 
-static void handle_zsockopt_get_str(ETERM *args, erl_czmq_state *state) {
+static void handle_zsockopt_get_str(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -461,9 +462,10 @@ static void handle_zsockopt_get_str(ETERM *args, erl_czmq_state *state) {
     erl_free(val);
 }
 
-static void handle_zsockopt_get_int(ETERM *args, erl_czmq_state *state) {
+static void handle_zsockopt_get_int(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -502,9 +504,10 @@ static void handle_zsockopt_get_int(ETERM *args, erl_czmq_state *state) {
     erl_free_term(result);
 }
 
-static void handle_zsockopt_set_str(ETERM *args, erl_czmq_state *state) {
+static void handle_zsockopt_set_str(EV_P_ ETERM *args) {
     assert_tuple_size(args, 3);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -548,9 +551,10 @@ static void handle_zsockopt_set_str(ETERM *args, erl_czmq_state *state) {
     erl_free(val);
 }
 
-static void handle_zsockopt_set_int(ETERM *args, erl_czmq_state *state) {
+static void handle_zsockopt_set_int(EV_P_ ETERM *args) {
     assert_tuple_size(args, 3);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -586,9 +590,10 @@ static void handle_zsockopt_set_int(ETERM *args, erl_czmq_state *state) {
     write_term(ETERM_OK, state);
 }
 
-static void handle_zstr_send(ETERM *args, erl_czmq_state *state) {
+static void handle_zstr_send(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -610,9 +615,10 @@ static void handle_zstr_send(ETERM *args, erl_czmq_state *state) {
     erl_free(data);
 }
 
-static void handle_zstr_recv_nowait(ETERM *args, erl_czmq_state *state) {
+static void handle_zstr_recv_nowait(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -639,9 +645,10 @@ static void handle_zstr_recv_nowait(ETERM *args, erl_czmq_state *state) {
     free(data);
 }
 
-static void handle_zframe_recv_nowait(ETERM *args, erl_czmq_state *state) {
+static void handle_zframe_recv_nowait(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *socket = socket_from_arg(args, 1, state);
     if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
@@ -682,9 +689,10 @@ static void set_auth(zauth_t *auth, erl_czmq_state *state) {
     state->auth = auth;
 }
 
-static void handle_zauth_new(ETERM *args, erl_czmq_state *state) {
+static void handle_zauth_new(EV_P_ ETERM *args) {
     assert_tuple_size(args, 0);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *auth = zauth_new(state->ctx);
     assert(auth);
 
@@ -706,9 +714,10 @@ static zauth_t *auth_from_arg(ETERM *args, int arg_pos,
     }
 }
 
-static void handle_zauth_deny(ETERM *args, erl_czmq_state *state) {
+static void handle_zauth_deny(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zauth_t *auth = auth_from_arg(args, 1, state);
     if (!auth) {
         write_term(ETERM_ERROR_INVALID_AUTH, state);
@@ -724,9 +733,10 @@ static void handle_zauth_deny(ETERM *args, erl_czmq_state *state) {
     erl_free(address);
 }
 
-static void handle_zauth_allow(ETERM *args, erl_czmq_state *state) {
+static void handle_zauth_allow(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zauth_t *auth = auth_from_arg(args, 1, state);
     if (!auth) {
         write_term(ETERM_ERROR_INVALID_AUTH, state);
@@ -742,9 +752,10 @@ static void handle_zauth_allow(ETERM *args, erl_czmq_state *state) {
     erl_free(address);
 }
 
-static void handle_zauth_configure_plain(ETERM *args, erl_czmq_state *state) {
+static void handle_zauth_configure_plain(EV_P_ ETERM *args) {
     assert_tuple_size(args, 3);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zauth_t *auth = auth_from_arg(args, 1, state);
     if (!auth) {
         write_term(ETERM_ERROR_INVALID_AUTH, state);
@@ -765,9 +776,10 @@ static void handle_zauth_configure_plain(ETERM *args, erl_czmq_state *state) {
     erl_free(pwd_file);
 }
 
-static void handle_zauth_configure_curve(ETERM *args, erl_czmq_state *state) {
+static void handle_zauth_configure_curve(EV_P_ ETERM *args) {
     assert_tuple_size(args, 3);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zauth_t *auth = auth_from_arg(args, 1, state);
     if (!auth) {
         write_term(ETERM_ERROR_INVALID_AUTH, state);
@@ -792,9 +804,10 @@ static void clear_auth(erl_czmq_state *state) {
     state->auth = NULL;
 }
 
-static void handle_zauth_destroy(ETERM *args, erl_czmq_state *state) {
+static void handle_zauth_destroy(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zauth_t *auth = auth_from_arg(args, 1, state);
     if (!auth) {
         write_term(ETERM_ERROR_INVALID_AUTH, state);
@@ -818,12 +831,13 @@ static int save_cert(void *cert, erl_czmq_state *state) {
     assert(0);
 }
 
-static void handle_zcert_new(ETERM *args, erl_czmq_state *state) {
+static void handle_zcert_new(EV_P_ ETERM *args) {
     assert_tuple_size(args, 0);
 
     zcert_t *cert = zcert_new();
     assert(cert);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     int index = save_cert(cert, state);
     ETERM *index_term = erl_mk_int(index);
     write_term(index_term, state);
@@ -835,9 +849,10 @@ static zcert_t *cert_from_arg(ETERM *args, int arg_pos,
     return vector_get(&state->certs, int_arg(args, arg_pos));
 }
 
-static void handle_zcert_apply(ETERM *args, erl_czmq_state *state) {
+static void handle_zcert_apply(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zcert_t *cert = cert_from_arg(args, 1, state);
     if (!cert) {
         write_term(ETERM_ERROR_INVALID_CERT, state);
@@ -855,9 +870,10 @@ static void handle_zcert_apply(ETERM *args, erl_czmq_state *state) {
     write_term(ETERM_OK, state);
 }
 
-static void handle_zcert_public_txt(ETERM *args, erl_czmq_state *state) {
+static void handle_zcert_public_txt(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zcert_t *cert = cert_from_arg(args, 1, state);
     if (!cert) {
         write_term(ETERM_ERROR_INVALID_CERT, state);
@@ -879,9 +895,10 @@ static void handle_zcert_public_txt(ETERM *args, erl_czmq_state *state) {
     erl_free_term(result);
 }
 
-static void handle_zcert_save_public(ETERM *args, erl_czmq_state *state) {
+static void handle_zcert_save_public(EV_P_ ETERM *args) {
     assert_tuple_size(args, 2);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     void *cert = cert_from_arg(args, 1, state);
     if (!cert) {
         write_term(ETERM_ERROR_INVALID_CERT, state);
@@ -902,9 +919,10 @@ static void clear_cert(int cert_index, erl_czmq_state *state) {
     vector_set(&state->certs, cert_index, NULL);
 }
 
-static void handle_zcert_destroy(ETERM *args, erl_czmq_state *state) {
+static void handle_zcert_destroy(EV_P_ ETERM *args) {
     assert_tuple_size(args, 1);
 
+    erl_czmq_state *state = ev_userdata(EV_A);
     zcert_t *cert = cert_from_arg(args, 1, state);
     if (!cert) {
         write_term(ETERM_ERROR_INVALID_CERT, state);
@@ -915,30 +933,6 @@ static void handle_zcert_destroy(ETERM *args, erl_czmq_state *state) {
     clear_cert(int_arg(args, 1), state);
 
     write_term(ETERM_OK, state);
-}
-
-static void handle_cmd(byte *buf, erl_czmq_state *state) {
-    ETERM *cmd_term = erl_decode(buf);
-    if (!ERL_IS_TUPLE(cmd_term) || ERL_TUPLE_SIZE(cmd_term) != 2) {
-        fprintf(stderr, "invalid cmd format: ");
-        erl_print_term(stderr, cmd_term);
-        fprintf(stderr, "\n");
-        exit(EXIT_INTERNAL_ERROR);
-    }
-
-    ETERM *cmd_id_term = erl_element(1, cmd_term);
-    int cmd_id = ERL_INT_VALUE(cmd_id_term);
-    if (cmd_id < 0 || cmd_id >= CMD_COUNT) {
-        fprintf(stderr, "cmd_id out of range: %i", cmd_id);
-        exit(EXIT_INTERNAL_ERROR);
-    }
-
-    ETERM *cmd_args_term = erl_element(2, cmd_term);
-    handlers[cmd_id](cmd_args_term, state);
-
-    erl_free_compound(cmd_term);
-    erl_free_compound(cmd_id_term);
-    erl_free_compound(cmd_args_term);
 }
 
 static void init_eterms() {
@@ -957,62 +951,39 @@ static void init_eterms() {
     ETERM_ERROR_INVALID_CERT = erl_format("{error,invalid_cert}");
 }
 
-#define MAGIC_AFTER 1
-#define MAGIC_REPEAT 0
-
-typedef struct erl_zpoller {
-    ev_timer *watcher;
-    zpoller_t *poller;
-    erl_zpoller_mode mode;
-    ETERM *pid;
-    int id;
-} erl_zpoller_t;
-
-static void handle_zpoller_new(ETERM *args, erl_czmq_state *state) {
-    assert_tuple_size(args, 2);
-    
-    ETERM *poller_pid = erl_element(2, args);
-    void *socket = socket_from_arg(args, 1, state);
-    
-    erl_zpoller_t *erl_poller = malloc(sizeof(*erl_poller));
-    assert(erl_poller);
-
-    zpoller_t *poller = zpoller_new(socket);
-    assert(poller);
-
-    erl_poller->poller = poller;
-    
-    int poller_id = save_poller(erl_poller, state);
-    erl_poller->id = poller_id;
-  
-    ev_timer_init(erl_poller->watcher, erl_zpoller_cb, MAGIC_AFTER, MAGIC_REPEAT);
-    ev_timer_again(state->loop, erl_poller->watcher);
-
-    ETERM *poller_id_term = erl_mk_int(poller_id);
-    write_term(poller_id_term, state);
-    erl_free_term(poller_id_term);
+static void erl_zpoller_start(EV_P_ erl_zpoller_t *poller) {
+    ev_timer_again(EV_A_ poller->watcher);
 }
 
-static void erl_zpoller_cb(EV_P_ ev_timer *w_, int revent) {
-    erl_zpoller_t *w = (erl_zpoller_t *)w_;
+static void erl_zpoller_stop(EV_P_ erl_zpoller_t *poller) {
+    ev_timer_stop(EV_A_ poller->watcher);
+}
 
-    int more = 0;
-    void *socket = zpoller_wait(w.poller, -1);
-    if (socket) { // TODO: goto?
+static void recv_nowait_cb(EV_P_ ev_timer *w_, int revent) {
+    erl_zpoller_t *poller = (erl_zpoller_t *)w_;
+
+    erl_czmq_state *state = ev_userdata(EV_A);
+    void *socket = zpoller_wait(poller->poller, -1);
+    if (!socket) {
         zframe_t *frame = zframe_recv_nowait(socket);
         if (frame) {
             size_t frame_size = zframe_size(frame);
             byte *frame_data = zframe_data(frame);
-            more = zframe_more(frame);
+            int more = zframe_more(frame);
 
             ETERM *result_parts[2];
             result_parts[0] = ETERM_OK;
-            ETERM *data_more_parts[2];
-            ETERM *data_bin = erl_mk_binary((char*)frame_data, frame_size);
-            data_more_parts[0] = data_bin;
+
+            ETERM *data_more_parts[3];
+            data_more_parts[0] = poller->id;
+
             ETERM *more_boolean = more ? ETERM_TRUE : ETERM_FALSE;
             data_more_parts[1] = more_boolean;
-            ETERM *data_more = erl_mk_tuple(data_more_parts, 2);
+
+            ETERM *data_bin = erl_mk_binary((char*)frame_data, frame_size);
+            data_more_parts[2] = data_bin;
+
+            ETERM *data_more = erl_mk_tuple(data_more_parts, 3);
             result_parts[1] = data_more;
             ETERM *result = erl_mk_tuple(result_parts, 2);
 
@@ -1023,37 +994,129 @@ static void erl_zpoller_cb(EV_P_ ev_timer *w_, int revent) {
             erl_free_term(more_boolean);
             erl_free_term(result);
         }
-    } else if (w->mode) {
+    }
+
+    erl_zpoller_start(EV_A_ poller);
+}
+
+static erl_zpoller_t *erl_zpoller_new(void *socket) {
+    zpoller_t *poller_czmq = zpoller_new(socket, NULL);
+    if (!poller_czmq) {
+        return NULL;
+    }
+
+    erl_zpoller_t *poller = malloc(sizeof(*poller));
+    if (!socket) {
+        zpoller_destroy(&poller_czmq);
+        return NULL;
+    }
+
+    poller->poller = poller_czmq;
+    ev_timer_init(poller->watcher, recv_nowait_cb, ERL_ZPOLLER_AFTER, ERL_ZPOLLER_REPEAT);
+
+    return poller;
+}
+
+static void erl_zpoller_destroy(erl_zpoller_t *poller) {
+    zpoller_destroy(&poller->poller);
+    erl_free_term(poller->id);
+    free(poller);
+}
+
+static void handle_zpoller_new(EV_P_ ETERM *args) {
+    assert_tuple_size(args, 2);
+    erl_czmq_state *state = ev_userdata(EV_A);
+    
+    void *socket = socket_from_arg(args, 1, state);
+    if (!socket) {
         write_term(ETERM_ERROR_INVALID_SOCKET, state);
-        erl_zpoller_destroy(EV_A_ w);
+        return;
+    }
+
+    erl_zpoller_t *poller = erl_zpoller_new(socket);
+    if (!poller) {
+        write_term(ETERM_ERROR, state);
+        return;
+    }
+
+    char *poller_id = save_poller(poller, state);
+    if (!poller_id) {
+        erl_zpoller_destroy(poller);
         return;
     }
     
-    if (!more && w->mode) {
+    poller->id = erl_mk_string(poller_id);
+    erl_zpoller_start(EV_A_ poller);
+
+    ETERM *result_parts[2];
+    result_parts[0] = ETERM_OK;
+    result_parts[1] = poller->id;
+
+    ETERM *result = erl_mk_tuple(result_parts, 2);
+    write_term(result, state);
+
+    erl_free_term(result);
+}
+
+static void handle_zpoller_destroy(EV_P_ ETERM *args) {
+    assert_tuple_size(args, 1);
+    
+    ETERM *poller_id_term = erl_element(1, args);
+    char *poller_id = erl_iolist_to_string(poller_id_term);
+    
+    erl_czmq_state *state = ev_userdata(EV_A);
+    erl_zpoller_t *poller = delete_poller(poller_id, state);
+    if (!poller) {
         write_term(ETERM_ERROR, state);
-        erl_zpoller_destroy(EV_A_ w);
         return;
     }
 
-    ev_timer_again(EV_A_ erl_poller->watcher);
+    erl_zpoller_stop(EV_A_ poller);
+    erl_zpoller_destroy(poller);
+
+    write_term(ETERM_OK, state);
+    erl_free_term(poller_id_term);
 }
 
-void erl_czmq_init(erl_czmq_state *state) {
-    erl_init(NULL, 0);
 
-    init_eterms();
+enum {
+    CMD_PING = 0,
+    CMD_ZSOCKET_NEW,
+    CMD_ZSOCKET_TYPE_STR,
+    CMD_ZSOCKET_BIND,
+    CMD_ZSOCKET_CONNECT,
+    CMD_ZSOCKET_SENDMEM,
+    CMD_ZSOCKET_DESTROY,
+    CMD_ZSOCKOPT_GET_STR,
+    CMD_ZSOCKOPT_GET_INT,
+    CMD_ZSOCKOPT_SET_STR,
+    CMD_ZSOCKOPT_SET_INT,
+    CMD_ZSTR_SEND,
+    CMD_ZSTR_RECV_NOWAIT,
+    CMD_ZFRAME_RECV_NOWAIT,
+    CMD_ZAUTH_NEW,
+    CMD_ZAUTH_DENY,
+    CMD_ZAUTH_ALLOW,
+    CMD_ZAUTH_CONFIGURE_PLAIN,
+    CMD_ZAUTH_CONFIGURE_CURVE,
+    CMD_ZAUTH_DESTROY,
+    CMD_ZCERT_NEW,
+    CMD_ZCERT_APPLY,
+    CMD_ZCERT_PUBLIC_TXT,
+    CMD_ZCERT_SAVE_PUBLIC,
+    CMD_ZCERT_DESTROY,
+    CMD_ZSOCKET_UNBIND,
+    CMD_ZSOCKET_DISCONNECT,
+    CMD_ZCTX_SET,
+    CMD_ZSOCKET_POLLER_NEW,
+    CMD_ZSOCKET_POLLER_DESTROY,
 
-    state->ctx = zctx_new();
-    assert(state->ctx);
+    // WARN: should be always last
+    CMD_COUNT
+};
 
-    state->auth = NULL;
-    vector_init(&state->poller);
-    vector_init(&state->sockets);
-    vector_init(&state->certs);
-}
-
-static const cmd_handler handlers[CMD_COUNT] = {
-    [CMD_PING]                   = &handle_ping, 
+static cmd_handler handlers[] = {
+    [CMD_PING]                   = &handle_ping,
     [CMD_ZSOCKET_NEW]            = &handle_zsocket_new,
     [CMD_ZSOCKET_TYPE_STR]       = &handle_zsocket_type_str,
     [CMD_ZSOCKET_BIND]           = &handle_zsocket_bind,
@@ -1082,19 +1145,58 @@ static const cmd_handler handlers[CMD_COUNT] = {
     [CMD_ZSOCKET_DISCONNECT]     = &handle_zsocket_disconnect,
     [CMD_ZCTX_SET]               = &handle_zctx_set_int,
     [CMD_ZSOCKET_POLLER_NEW]     = &handle_zpoller_new,
-    [CMD_ZSOCKET_POLLER_ADD]     = &handle_zpoller_add,
     [CMD_ZSOCKET_POLLER_DESTROY] = &handle_zpoller_destroy
 };
 
-static void stdin_callback(EV_P_ ev_io *w, int revents) {
+static void handle_cmd(EV_P_ byte *buf) {
+    ETERM *cmd_term = erl_decode(buf);
+    if (!ERL_IS_TUPLE(cmd_term) || ERL_TUPLE_SIZE(cmd_term) != 2) {
+        fprintf(stderr, "invalid cmd format: ");
+        erl_print_term(stderr, cmd_term);
+        fprintf(stderr, "\n");
+        exit(EXIT_INTERNAL_ERROR);
+    }
+
+    ETERM *cmd_id_term = erl_element(1, cmd_term);
+    int cmd_id = ERL_INT_VALUE(cmd_id_term);
+    if (cmd_id < 0 || cmd_id >= CMD_COUNT) {
+        fprintf(stderr, "cmd_id out of range: %i", cmd_id);
+        exit(EXIT_INTERNAL_ERROR);
+    }
+
+    ETERM *cmd_args_term = erl_element(2, cmd_term);
+    cmd_handler cmd = handlers[cmd_id];
+    cmd(EV_A_ cmd_args_term);
+
+    erl_free_compound(cmd_term);
+    erl_free_compound(cmd_id_term);
+    erl_free_compound(cmd_args_term);
+}
+
+void erl_czmq_init(erl_czmq_state *state) {
+    erl_init(NULL, 0);
+
+    init_eterms();
+
+    state->ctx = zctx_new();
+    assert(state->ctx);
+
+    state->auth = NULL;
+    state->pollers = zhash_new();
+    vector_init(&state->sockets);
+    vector_init(&state->certs);
+}
+
+static void stdin_cb(EV_P_ ev_io *w, int revents) {
     byte cmd_buf[CMD_BUF_SIZE];
     int len = read_cmd(CMD_BUF_SIZE, cmd_buf);
+
     if (len == 0) {
         exit(EXIT_OK);
     } else if (len < 0) {
         exit(EXIT_PORT_READ_ERROR);
     } else {
-        handle_cmd(cmd_buf, state);
+        handle_cmd(EV_A_ cmd_buf);
     }
 }
 
@@ -1107,11 +1209,8 @@ int erl_czmq_run(erl_czmq_state *state) {
     ev_io *stdin_watcher = malloc(sizeof(*stdin_watcher));
     assert(stdin_watcher);
 
-    ev_io_init(stdin_watcher, stdin_callback, STDIN_FILENO, EV_READ);
-
+    ev_io_init(stdin_watcher, stdin_cb, STDIN_FILENO, EV_READ);
     ev_io_start(loop, stdin_watcher);
-    ev_io_start(loop, stdout_watcher);
-
     ev_run(loop, 0);
 
     return 0;

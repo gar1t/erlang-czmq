@@ -21,6 +21,8 @@
          zctx_set_pipehwm/2,
          zctx_set_sndhwm/2,
          zctx_set_rcvhwm/2,
+         zpoller_new/2,
+         zpoller_destroy/2,
          zsocket_new/2,
          zsocket_type_str/1,
          zsocket_bind/2,
@@ -76,7 +78,7 @@
 
 -include("czmq.hrl").
 
--record(state, {port}).
+-record(state, {port, recs}).
 
 -define(DEFAULT_PING_TIMEOUT, 1000).
 -define(MSG_TIMEOUT, 1000).
@@ -110,6 +112,8 @@
 -define(CMD_ZSOCKET_UNBIND,         25).
 -define(CMD_ZSOCKET_DISCONNECT,     26).
 -define(CMD_ZCTX_SET,               27).
+-define(CMD_ZPOLLER_NEW,            28).
+-define(CMD_ZPOLLER_DESTROY,        29).
 
 
 %% These *must* correspond to the ZCTX_SET_XXX definitions in czmq_port.c
@@ -149,7 +153,7 @@ start_link() ->
 init([]) ->
     process_flag(trap_exit, true),
     Port = start_port(),
-    {ok, #state{port=Port}}.
+    {ok, #state{port = Port, recs = dict:new()}}.
 
 start_port() ->
     open_port({spawn, port_exe()}, [{packet, 2}, binary, exit_status]).
@@ -209,6 +213,12 @@ atom_to_socket_type(push)   -> ?ZMQ_PUSH;
 atom_to_socket_type(xpub)   -> ?ZMQ_XPUB;
 atom_to_socket_type(xsub)   -> ?ZMQ_XSUB;
 atom_to_socket_type(stream) -> ?ZMQ_STREAM.
+
+zpoller_new({Ctx, Socket}, Pid) ->
+    gen_server:call(Ctx, {?CMD_ZPOLLER_NEW, {Socket, Pid}}).
+
+zpoller_destroy(Ctx, Poller) ->
+    gen_server:call(Ctx, {?CMD_ZPOLLER_DESTROY, {Poller}}).
 
 bound_socket(Socket, Ctx) -> {Ctx, Socket}.
 
@@ -447,7 +457,8 @@ terminate(Ctx) ->
 handle_call(terminate, _From, State) ->
     {stop, normal, ok, State};
 handle_call(Msg, _From, State) ->
-    Reply = send_to_port(Msg, State),
+    UpdMsg = handle_msg(Msg),
+    Reply = send_to_port(UpdMsg, State),
     NextState = handle_msg_reply(Msg, Reply, State),
     {reply, Reply, NextState}.
 
@@ -462,6 +473,15 @@ send_to_port(Msg, #state{port=Port}) ->
             exit({port_exit, Reason})
     end.
 
+handle_msg({?CMD_ZPOLLER_NEW, {Socket, _}}) ->
+    {?CMD_ZPOLLER_NEW, {Socket}};
+handle_msg(Msg) ->
+    Msg.
+
+handle_msg_reply({?CMD_ZPOLLER_NEW, {_, Pid}}, {ok, Poller}, State) ->
+    State#state{recs = dict:append(Poller, Pid, State#state.recs)};
+handle_msg_reply({?CMD_ZPOLLER_DESTROY, Poller}, ok, State) ->
+    State#state{recs = dict:erase(Poller, State#state.recs)};
 handle_msg_reply(_Msg, _Reply, State) ->
     %% TODO: For creating sockets, we'll need to maintain an association
     %% between the socket ID and the process that should receive messages from
@@ -471,6 +491,11 @@ handle_msg_reply(_Msg, _Reply, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+handle_info({Port, {data, Data}}, #state{port = Port, recs = Recs} = State) ->
+    {ok, {Poller, More, Frame}} = binary_to_term(Data),
+    {ok, Pid} = dict:find(Poller, Recs),
+    erlang:send(Pid, {Frame, More}),
+    {noreply, State};
 handle_info({Port, {exit_status, Exit}}, #state{port=Port}=State) ->
     {stop, {port_process_exit, Exit}, State};
 handle_info({'EXIT', Port, Reason}, #state{port=Port}=State) ->

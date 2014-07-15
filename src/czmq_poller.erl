@@ -28,44 +28,52 @@
 %%% Start / init
 %%%===================================================================
 
-start(Socket, Options) ->
-    gen_server:start(?MODULE, [Socket, Options, self()], []).
+start(Socket, Opts) ->
+    gen_server:start(?MODULE, [Socket, check_opts(Opts)], []).
 
-start_link(Socket, Options) ->
-    gen_server:start_link(?MODULE, [Socket, Options, self()], []).
+start_link(Socket, Opts) ->
+    gen_server:start_link(?MODULE, [Socket, check_opts(Opts)], []).
 
-init([Socket, Options, Parent]) ->
-    DispatchOption = dispatch_option(Options),
-    Target = maybe_target(DispatchOption, Options, Parent),
-    maybe_monitor(Target),
-    DispatchFun = dispatch_fun(DispatchOption, Target),
-    Interval = poll_interval_option(Options),
+init([Socket, Opts]) ->
+    Pid      = opt(target, Opts),
+    Fun      = opt(dispatch_fun, Opts),
+    Interval = opt(interval, Opts),
+
+    maybe_monitor(Pid),
+
     Start = timestamp(),
-    State = #state{
-               socket=Socket,
-               dispatch=DispatchFun,
-               interval=Interval,
-               start=Start},
-    {ok, State, 0}.
+    State = #state {
+               socket   = Socket,
+               dispatch = Fun,
+               interval = Interval,
+               start    = Start},
+    {ok, State}.
 
-dispatch_option(Options) ->
-    proplists:get_value(dispatch, Options).
+check_opts(Opts) ->
+    case proplists:get_value(target, Opts) of
+        undefined -> [{target, self()} | Opts];
+        _         -> Opts
+    end.
 
-maybe_target(undefined, Options, Parent) ->
-    proplists:get_value(target, Options, Parent);
-maybe_target(_Dispatch, _Options, _Parent) ->
+opt(interval, Opts) ->
+    proplists:get_value(interval, Opts, ?DEFAULT_POLL_INTERVAL);
+opt(target, Opts) ->
+    opt(target, proplists:get_value(dispatch_fun, Opts), Opts);
+opt(dispatch_fun, Opts) ->
+    opt(dispatch_fun, proplists:get_value(dispatch_fun, Opts), Opts).
+
+opt(dispatch_fun, undefined, Opts) ->
+    Pid = opt(target, Opts),
+    fun(Msg) -> erlang:send(Pid, {self(), Msg}) end;
+opt(dispatch_fun, Fun, Opts) ->
+    Fun;
+opt(target, undefined, Opts) ->
+    proplists:get_value(target, Opts);
+opt(target, _, Opts) ->
     undefined.
 
 maybe_monitor(undefined) -> ok;
 maybe_monitor(Pid) -> erlang:monitor(process, Pid).
-
-dispatch_fun(undefined, Target) ->
-    fun(Msg) -> erlang:send(Target, {self(), Msg}) end;
-dispatch_fun(Dispatch, _Target) ->
-    Dispatch.
-
-poll_interval_option(Options) ->
-    proplists:get_value(poll_interval, Options, ?DEFAULT_POLL_INTERVAL).
 
 timestamp() ->
     {M, S, U} = erlang:now(),

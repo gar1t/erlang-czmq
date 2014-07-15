@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
     if (argc > 1 && strcmp(argv[1], "--test") == 0) {
         ret = test(&state);
     } else {
-        ret = erl_czmq_loop(&state);
+        ret = erl_czmq_run(&state);
     }
 
     return ret;

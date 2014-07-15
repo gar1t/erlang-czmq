@@ -11,13 +11,13 @@ typedef struct {
     zctx_t *ctx;
     zauth_t *auth;
 
-    vector poller;
     vector sockets;
     vector certs;
+    zhash_t *pollers;
 } erl_czmq_state;
 
 void erl_czmq_init(erl_czmq_state *state);
 
-int erl_czmq_loop(erl_czmq_state *state);
+int erl_czmq_run(erl_czmq_state *state);
 
 #endif
