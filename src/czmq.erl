@@ -22,7 +22,7 @@
          zctx_set_sndhwm/2,
          zctx_set_rcvhwm/2,
          zpoller_new/2,
-         zpoller_destroy/2,
+         zpoller_destroy/1,
          zsocket_new/2,
          zsocket_type_str/1,
          zsocket_bind/2,
@@ -71,74 +71,18 @@
          subscribe/1, subscribe/2,
          subscribe_link/1, subscribe_link/2,
          unsubscribe/1,
+         unsubscribe/2,
          terminate/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("czmq.hrl").
+-include_lib("czmq.hrl").
 
--record(state, {port, recs}).
+-record(state, {port, clients}).
 
 -define(DEFAULT_PING_TIMEOUT, 1000).
 -define(MSG_TIMEOUT, 1000).
-
-%% These *must* correspond to the handlers in czmq_port.c
--define(CMD_PING,                    0).
--define(CMD_ZSOCKET_NEW,             1).
--define(CMD_ZSOCKET_TYPE_STR,        2).
--define(CMD_ZSOCKET_BIND,            3).
--define(CMD_ZSOCKET_CONNECT,         4).
--define(CMD_ZSOCKET_SENDMEM,         5).
--define(CMD_ZSOCKET_DESTROY,         6).
--define(CMD_ZSOCKOPT_GET_STR,        7).
--define(CMD_ZSOCKOPT_GET_INT,        8).
--define(CMD_ZSOCKOPT_SET_STR,        9).
--define(CMD_ZSOCKOPT_SET_INT,       10).
--define(CMD_ZSTR_SEND,              11).
--define(CMD_ZSTR_RECV_NOWAIT,       12).
--define(CMD_ZFRAME_RECV_NOWAIT,     13).
--define(CMD_ZAUTH_NEW,              14).
--define(CMD_ZAUTH_DENY,             15).
--define(CMD_ZAUTH_ALLOW,            16).
--define(CMD_ZAUTH_CONFIGURE_PLAIN,  17).
--define(CMD_ZAUTH_CONFIGURE_CURVE,  18).
--define(CMD_ZAUTH_DESTROY,          19).
--define(CMD_ZCERT_NEW,              20).
--define(CMD_ZCERT_APPLY,            21).
--define(CMD_ZCERT_PUBLIC_TXT,       22).
--define(CMD_ZCERT_SAVE_PUBLIC,      23).
--define(CMD_ZCERT_DESTROY,          24).
--define(CMD_ZSOCKET_UNBIND,         25).
--define(CMD_ZSOCKET_DISCONNECT,     26).
--define(CMD_ZCTX_SET,               27).
--define(CMD_ZPOLLER_NEW,            28).
--define(CMD_ZPOLLER_DESTROY,        29).
-
-
-%% These *must* correspond to the ZCTX_SET_XXX definitions in czmq_port.c
--define(ZCTX_SET_IOTHREADS, 0).
--define(ZCTX_SET_LINGER, 1).
--define(ZCTX_SET_PIPEHWM, 2).
--define(ZCTX_SET_SNDHWM, 3).
--define(ZCTX_SET_RCVHWM, 4).
-
-%% These *must* correspond to the ZSOCKOPT_XXX definitions in czmq_port.c
--define(ZSOCKOPT_ZAP_DOMAIN, 0).
--define(ZSOCKOPT_PLAIN_SERVER, 1).
--define(ZSOCKOPT_PLAIN_USERNAME, 2).
--define(ZSOCKOPT_PLAIN_PASSWORD, 3).
--define(ZSOCKOPT_CURVE_SERVER, 4).
--define(ZSOCKOPT_CURVE_SERVERKEY, 5).
--define(ZSOCKOPT_BACKLOG, 6).
--define(ZSOCKOPT_SNDHWM, 7).
--define(ZSOCKOPT_RCVHWM, 8).
--define(ZSOCKOPT_SUBSCRIBE, 9).
--define(ZSOCKOPT_UNSUBSCRIBE, 10).
--define(ZSOCKOPT_IDENTITY, 11).
-
-
-
 
 %%%===================================================================
 %%% Start / init
@@ -153,14 +97,22 @@ start_link() ->
 init([]) ->
     process_flag(trap_exit, true),
     Port = start_port(),
-    {ok, #state{port = Port, recs = dict:new()}}.
+    {ok, #state{port = Port, clients = dict:new()}}.
 
 start_port() ->
     open_port({spawn, port_exe()}, [{packet, 2}, binary, exit_status]).
 
+valgrind(Cmd) ->
+    valgrind(Cmd, true).
+
+valgrind(Cmd, true) ->
+    "valgrind --leak-check=full --show-reachable=yes --track-origins=yes --log-file=./valgrind.out priv/czmq-port " ++ Cmd;
+valgrind(Cmd, false) ->
+    Cmd.
+
 port_exe() ->
     EbinDir = filename:dirname(code:which(?MODULE)),
-    filename:join([EbinDir, "..", "priv", "czmq-port"]).
+    valgrind(filename:join([EbinDir, "..", "priv", "czmq-port"])).
 
 %%%===================================================================
 %%% API
@@ -193,8 +145,6 @@ zctx_set_int(Ctx, Opt, Val) when is_integer(Val) ->
     Args = {Opt, Val},
     gen_server:call(Ctx, {?CMD_ZCTX_SET, Args}, infinity).
 
-
-
 zsocket_new(Ctx, Type) when is_atom(Type) ->
     zsocket_new(Ctx, atom_to_socket_type(Type));
 zsocket_new(Ctx, Type) ->
@@ -215,12 +165,14 @@ atom_to_socket_type(xsub)   -> ?ZMQ_XSUB;
 atom_to_socket_type(stream) -> ?ZMQ_STREAM.
 
 zpoller_new({Ctx, Socket}, Pid) ->
-    gen_server:call(Ctx, {?CMD_ZPOLLER_NEW, {Socket, Pid}}).
+    Poller = gen_server:call(Ctx, {?CMD_ZPOLLER_NEW, {Socket, Pid}}),
+    bound_poller(Poller, Ctx).
 
-zpoller_destroy(Ctx, Poller) ->
+zpoller_destroy({Ctx, Poller}) ->
     gen_server:call(Ctx, {?CMD_ZPOLLER_DESTROY, {Poller}}).
 
 bound_socket(Socket, Ctx) -> {Ctx, Socket}.
+bound_poller(Poller, Ctx) -> {Ctx, Poller}.
 
 zsocket_type_str({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZSOCKET_TYPE_STR, {Socket}}, infinity).
@@ -344,12 +296,11 @@ zstr_recv(BoundSocket) ->
 zstr_recv(BoundSocket, Options) ->
     Poller = start_poller(BoundSocket, Options),
     Reply = zstr_recv_reply(poller_recv(Poller, poll_timeout(Options))),
-    stop_poller(Poller),
+    stop_poller(Poller, Options),
     Reply.
 
 start_poller(BoundSocket, Options) ->
-    {ok, Poller} = czmq_poller:start_link(BoundSocket, Options),
-    Poller.
+    czmq_poller:start_link(BoundSocket, Options).
 
 poll_timeout(Options) ->
     proplists:get_value(timeout, Options, infinity).
@@ -367,8 +318,8 @@ zstr_recv_reply({error, Err}) -> {error, Err}.
 parts_to_list(Parts) ->
     binary_to_list(iolist_to_binary(Parts)).
 
-stop_poller(Poller) ->
-    ok = czmq_poller:stop(Poller).
+stop_poller(Poller, Options) ->
+    ok = czmq_poller:stop(Poller, Options).
 
 zframe_recv_nowait({Ctx, Socket}) ->
     gen_server:call(Ctx, {?CMD_ZFRAME_RECV_NOWAIT, {Socket}}, infinity).
@@ -445,7 +396,10 @@ subscribe_link(Socket, Options) ->
     czmq_poller:start_link(Socket, Options).
 
 unsubscribe(Poller) ->
-    czmq_poller:stop(Poller).
+    unsubscribe(Poller, []).
+
+unsubscribe(Poller, Opts) ->
+    czmq_poller:stop(Poller, Opts).
 
 terminate(Ctx) ->
     gen_server:call(Ctx, terminate, infinity).
@@ -456,46 +410,28 @@ terminate(Ctx) ->
 
 handle_call(terminate, _From, State) ->
     {stop, normal, ok, State};
-handle_call(Msg, _From, State) ->
-    UpdMsg = handle_msg(Msg),
-    Reply = send_to_port(UpdMsg, State),
-    NextState = handle_msg_reply(Msg, Reply, State),
-    {reply, Reply, NextState}.
+handle_call(Cmd, From, State) ->
+    CmdUpd = upd_cmd(Cmd, From),
+    send_to_port(CmdUpd, State),
+    {noreply, upd_state(Cmd, From, State)}.
 
-send_to_port(Msg, #state{port=Port}) ->
-    erlang:send(Port, {self(), {command, term_to_binary(Msg)}}),
-    receive
-        {Port, {data, Data}} ->
-            binary_to_term(Data);
-        {Port, {exit_status, Status}} ->
-            exit({port_exit, Status});
-        {'EXIT', Port, Reason} ->
-            exit({port_exit, Reason})
-    end.
+send_to_port(Msg, #state{port = Port}) ->
+    erlang:send(Port, {self(), {command, term_to_binary(Msg)}}).
 
-handle_msg({?CMD_ZPOLLER_NEW, {Socket, _}}) ->
-    {?CMD_ZPOLLER_NEW, {Socket}};
-handle_msg(Msg) ->
-    Msg.
+upd_cmd({?CMD_ZPOLLER_NEW, {Socket, _}}, Client) ->
+    {?CMD_ZPOLLER_NEW, Client, {Socket}};
+upd_cmd({IdCmd, Msg}, Client) ->
+    {IdCmd, Client, Msg}.
 
-handle_msg_reply({?CMD_ZPOLLER_NEW, {_, Pid}}, {ok, Poller}, State) ->
-    State#state{recs = dict:append(Poller, Pid, State#state.recs)};
-handle_msg_reply({?CMD_ZPOLLER_DESTROY, Poller}, ok, State) ->
-    State#state{recs = dict:erase(Poller, State#state.recs)};
-handle_msg_reply(_Msg, _Reply, State) ->
-    %% TODO: For creating sockets, we'll need to maintain an association
-    %% between the socket ID and the process that should receive messages from
-    %% that socket.
-    State.
+upd_state({?CMD_ZPOLLER_NEW, {_, Pid}}, Client, State) ->
+    State#state{clients = dict:append(Client, {?CMD_ZPOLLER_NEW, Pid}, State#state.clients)};
+upd_state({?CMD_ZPOLLER_DESTROY, {Poller}}, Client, State) ->
+    State#state{clients = dict:append(Client, {?CMD_ZPOLLER_DESTROY, Poller}, State#state.clients)};
+upd_state(_Msg, Client, State) ->
+    State#state{clients = dict:append(Client, 0, State#state.clients)}.
 
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info({Port, {data, Data}}, #state{port = Port, recs = Recs} = State) ->
-    {ok, {Poller, More, Frame}} = binary_to_term(Data),
-    {ok, Pid} = dict:find(Poller, Recs),
-    erlang:send(Pid, {Frame, More}),
-    {noreply, State};
+handle_info({Port, {data, Data}}, #state{port = Port} = State) ->
+    {noreply, handle_port_data(binary_to_term(Data), State)};
 handle_info({Port, {exit_status, Exit}}, #state{port=Port}=State) ->
     {stop, {port_process_exit, Exit}, State};
 handle_info({'EXIT', Port, Reason}, #state{port=Port}=State) ->
@@ -503,8 +439,33 @@ handle_info({'EXIT', Port, Reason}, #state{port=Port}=State) ->
 handle_info(Msg, State) ->
     {stop, {unhandled_msg, Msg}, State}.
 
+handle_port_data({error, invalid_command}, State) ->
+    State;
+handle_port_data({Client, Msg}, #state{clients = Clients} = State) ->
+    case dict:find(Client, Clients) of
+        {ok, [{?ZPOLLER_ACTIVE, Pid}]} ->
+            erlang:send(Pid, Msg),
+            State;
+        {ok, [{?CMD_ZPOLLER_NEW, Pid}]} ->
+            gen_server:reply(Client, Msg),
+            Erased = dict:erase(Client, Clients),
+            State#state{clients = dict:append(Msg, {?ZPOLLER_ACTIVE, Pid}, Erased)};
+        {ok, [{?CMD_ZPOLLER_DESTROY, Poller}]} ->
+            gen_server:reply(Client, Msg),
+            Erased = dict:erase(Poller, Clients),
+            State#state{clients = dict:erase(Client, Erased)};
+        {ok, [0]} -> 
+            gen_server:reply(Client, Msg),
+            State#state{clients = dict:erase(Client, Clients)}
+    end.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
 terminate(_Reason, _State) ->
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+    
