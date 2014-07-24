@@ -3016,6 +3016,14 @@ fi
 $as_echo "$as_me: enabling static build... $enable_static" >&6;}
 
 
+#AC_CHECK_HEADERS([ev.h], [], [AC_MSG_ERROR("ev.h not found")])
+#AC_CHECK_LIB([ev], [ev_run], [
+#        LIBS="-lev ${LIBS}"
+#        AC_DEFINE([HAVE_LIBEV], [1], [ev_run in -lev])
+#    ], [
+#        AC_MSG_ERROR("libev not found")
+#    ])
+
 ac_config_files="$ac_config_files Makefile"
 
 cat >confcache <<\_ACEOF

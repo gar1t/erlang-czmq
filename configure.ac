@@ -11,5 +11,13 @@ AC_ARG_ENABLE([static],
 AC_MSG_NOTICE([enabling static build... $enable_static])
 AC_SUBST(enable_static)
 
+#AC_CHECK_HEADERS([ev.h], [], [AC_MSG_ERROR("ev.h not found")])
+AC_CHECK_LIB([ev], [ev_run], [
+        LIBS="-lev ${LIBS}"
+        AC_DEFINE([HAVE_LIBEV], [1], [ev_run in -lev])
+    ], [
+        AC_MSG_ERROR("libev not found")
+    ])
+
 AC_OUTPUT(Makefile)
 AC_OUTPUT(c_src/Makefile)

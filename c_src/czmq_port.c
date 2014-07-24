@@ -32,15 +32,16 @@ static int test() {
 }
 
 int main(int argc, char *argv[]) {
-    erl_czmq_state state;
-    erl_czmq_init(&state);
+    erl_czmq_state *state = malloc(sizeof(*state));
+    erl_czmq_init(state);
 
     int ret;
     if (argc > 1 && strcmp(argv[1], "--test") == 0) {
-        ret = test(&state);
+        ret = test(state);
     } else {
-        ret = erl_czmq_loop(&state);
+        ret = erl_czmq_run(state);
     }
 
+    free(state);
     return ret;
 }
