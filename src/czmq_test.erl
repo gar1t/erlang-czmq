@@ -14,6 +14,7 @@
          sendmem_framerecv/1,
          zauth/1,
          poller/1,
+         non_block_poller/1,
          router_dealer/1,
          push_pull/1,
          req_rep/1,
@@ -39,15 +40,18 @@
 %%--------------------------------------------------------------------
 
 tests() ->
-    [fun zstr_send_recv/1,
+    [
+     fun non_block_poller/1,
+     fun poller/1,
+     fun zstr_send_recv/1,
      fun sendmem_framerecv/1,
      fun zauth/1,
-     fun poller/1,
      fun router_dealer/1,
      fun push_pull/1,
      fun req_rep/1,
      fun pub_sub/1,
-     fun sockopts/1].
+     fun sockopts/1
+     ].
 
 %%--------------------------------------------------------------------
 %% @doc Run all tests.
@@ -98,12 +102,12 @@ zstr_send_recv(Ctx) ->
     ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
 
-    timer:sleep(10),
+    timer:sleep(100),
 
     Msg = "Watson, I found your shirt",
     ok = czmq:zstr_send(Writer, Msg),
 
-    timer:sleep(10),
+    timer:sleep(100),
 
     {ok, Msg} = czmq:zstr_recv_nowait(Reader),
 
@@ -131,12 +135,12 @@ sendmem_framerecv(Ctx) ->
     "PULL" = czmq:zsocket_type_str(Reader),
     ok = czmq:zsocket_connect(Reader, connect_endpoint(Port)),
 
-    timer:sleep(10),
+    timer:sleep(100),
 
     ok = czmq:zsocket_sendmem(Writer, "ABC", more),
     ok = czmq:zsocket_sendmem(Writer, "DEFG"),
 
-    timer:sleep(10),
+    timer:sleep(100),
 
     {ok, Frame1} = czmq:zframe_recv_nowait(Reader),
 
@@ -282,11 +286,11 @@ client_server_can_connect(Ctx, Config) ->
     {ok, Port} = czmq:zsocket_bind(Server, "tcp://127.0.0.1:*"),
     ok = czmq:zsocket_connect(Client, connect_endpoint(Port)),
 
-    timer:sleep(10),
+    timer:sleep(100),
 
     Sent = czmq:zstr_send(Server, "Watson, sorry about the other night"),
 
-    timer:sleep(10),
+    timer:sleep(100),
 
     Received = czmq:zstr_recv_nowait(Client),
 
@@ -316,7 +320,7 @@ poller(Ctx) ->
     czmq:zsocket_set_sndhwm(Writer, 5000),
     ok = czmq:zsocket_connect(Writer, "inproc://zpoller_test"),
 
-    {ok, Poller} = czmq:subscribe_link(Reader, [{poll_interval, 100}]),
+    Poller = czmq:subscribe_link(Reader, [{poll_interval, 100}]),
 
     MsgFmt = "Watson, I want you in ~b second(s)",
     send_messages(Writer, MsgFmt, 5000),
@@ -343,6 +347,52 @@ receive_messages(MsgFmt, N) when N > 0 ->
         1000 -> error({timeout, N})
     end,
     receive_messages(MsgFmt, N - 1).
+
+%%--------------------------------------------------------------------
+%%
+%%
+%%--------------------------------------------------------------------
+
+non_block_poller(Ctx) ->
+    io:format(" * non block poller: "),
+
+    Reader = czmq:zsocket_new(Ctx, pull),
+    {ok, _} = czmq:zsocket_bind(Reader, "inproc://zpoller_non_block_test"),
+
+    Writer = czmq:zsocket_new(Ctx, push),
+    czmq:zsocket_set_sndhwm(Writer, 5000),
+    ok = czmq:zsocket_connect(Writer, "inproc://zpoller_non_block_test"),
+
+    Poller = czmq:subscribe_link(Reader, [non_block, {target, self()}]),
+
+    MsgFmt = "Watson, I want you in ~b second(s)",
+    send_messages(Writer, MsgFmt, 5000),
+    receive_non_block_messages(MsgFmt, 5000),
+
+    czmq:unsubscribe(Poller, [non_block]),
+    czmq:zsocket_destroy(Reader),
+    czmq:zsocket_destroy(Writer),
+
+    io:format("ok~n").
+
+receive_non_block_messages(_MsgFmt, 0) -> ok;
+receive_non_block_messages(MsgFmt, N) when N > 0 ->
+    Expected = [iolist_to_binary(io_lib:format(MsgFmt, [N]))],
+    case receive_non_block(true, []) of
+        {ok, Expected} -> ok;
+        {ok, Frames} -> error({Frames, N});
+        error -> error({timeout, N})
+    end.
+
+receive_non_block(false, Frames) ->
+    {ok, lists:reverse(Frames)};
+receive_non_block(true, Frames) ->
+    receive
+        {Frame, More} ->
+	    receive_non_block(More, [Frame | Frames])
+    after
+        1000 -> error
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc Tests router/dealer interactions.

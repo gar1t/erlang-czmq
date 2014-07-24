@@ -15,7 +15,7 @@
 
 -behavior(gen_server).
 
--export([start/2, start_link/2, stop/1]).
+-export([start/2, start_link/2, stop/2, stop/1]).
 
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3,
          terminate/2, code_change/3]).
@@ -28,44 +28,64 @@
 %%% Start / init
 %%%===================================================================
 
-start(Socket, Options) ->
-    gen_server:start(?MODULE, [Socket, Options, self()], []).
+start(Socket, Opts) ->
+    start(Socket, check_opts(Opts), opt(non_block, Opts)).
 
-start_link(Socket, Options) ->
-    gen_server:start_link(?MODULE, [Socket, Options, self()], []).
+start_link(Socket, Opts) ->
+    start_link(Socket, check_opts(Opts), opt(non_block, Opts)).
 
-init([Socket, Options, Parent]) ->
-    DispatchOption = dispatch_option(Options),
-    Target = maybe_target(DispatchOption, Options, Parent),
-    maybe_monitor(Target),
-    DispatchFun = dispatch_fun(DispatchOption, Target),
-    Interval = poll_interval_option(Options),
+start(Socket, Opts, true) ->
+    czmq:zpoller_new(Socket, opt(target, Opts));
+start(Socket, Opts, false) ->
+    {ok, Pid} = gen_server:start(?MODULE, [Socket, Opts], []),
+    Pid.
+   
+start_link(Socket, Opts, true) ->
+    czmq:zpoller_new(Socket, opt(target, Opts));
+start_link(Socket, Opts, false) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, [Socket, check_opts(Opts)], []),
+    Pid.
+
+init([Socket, Opts]) ->
+    Pid      = opt(target, Opts),
+    Fun      = opt(dispatch_fun, Opts),
+    Interval = opt(interval, Opts),
+
+    maybe_monitor(Pid),
+
     Start = timestamp(),
-    State = #state{
-               socket=Socket,
-               dispatch=DispatchFun,
-               interval=Interval,
-               start=Start},
-    {ok, State, 0}.
+    {ok, #state {
+        socket   = Socket,
+        dispatch = Fun,
+        interval = Interval,
+        start    = Start},
+    0}.
 
-dispatch_option(Options) ->
-    proplists:get_value(dispatch, Options).
+check_opts(Opts) ->
+    check_opts(target, proplists:get_value(target, Opts), Opts).
 
-maybe_target(undefined, Options, Parent) ->
-    proplists:get_value(target, Options, Parent);
-maybe_target(_Dispatch, _Options, _Parent) ->
-    undefined.
+check_opts(target, undefined, Opts) ->
+    [{target, self()} | Opts];
+check_opts(target, _, Opts) ->
+    Opts.
+
+opt(non_block, Opts) ->
+    lists:member(non_block, Opts);
+opt(interval, Opts) ->
+    proplists:get_value(interval, Opts, ?DEFAULT_POLL_INTERVAL);
+opt(target, Opts) ->
+    proplists:get_value(target, Opts);
+opt(dispatch_fun, Opts) ->
+    opt(dispatch_fun, proplists:get_value(dispatch_fun, Opts), Opts).
+
+opt(dispatch_fun, undefined, Opts) ->
+    Pid = opt(target, Opts),
+    fun(Msg) -> erlang:send(Pid, {self(), Msg}) end;
+opt(dispatch_fun, Fun, _Opts) ->
+    Fun.
 
 maybe_monitor(undefined) -> ok;
 maybe_monitor(Pid) -> erlang:monitor(process, Pid).
-
-dispatch_fun(undefined, Target) ->
-    fun(Msg) -> erlang:send(Target, {self(), Msg}) end;
-dispatch_fun(Dispatch, _Target) ->
-    Dispatch.
-
-poll_interval_option(Options) ->
-    proplists:get_value(poll_interval, Options, ?DEFAULT_POLL_INTERVAL).
 
 timestamp() ->
     {M, S, U} = erlang:now(),
@@ -74,6 +94,13 @@ timestamp() ->
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+stop(Poller, true) ->
+    czmq:zpoller_destroy(Poller);
+stop(Poller, false) ->
+    stop(Poller);
+stop(Poller, Opts) when is_list(Opts) ->
+    stop(Poller, lists:member(non_block, Opts)).
 
 stop(Poller) ->
     gen_server:call(Poller, stop).
