@@ -976,7 +976,7 @@ static void poller_recv_cb(EV_P_ ev_timer *w, int revent) {
     erl_zpoller_t *poller = (erl_zpoller_t *)w;
 
     erl_czmq_state *state = ev_userdata(EV_A);
-    void *socket = zpoller_wait(poller->zpoll, -1);
+    void *socket = zpoller_wait(poller->zpoll, 0);
     if (socket) {
         zframe_t *frame = zframe_recv_nowait(socket);
         if (frame) {
