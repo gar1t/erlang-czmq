@@ -19,7 +19,7 @@ GNUMAKE=`which gmake 2>/dev/null || which make`
 STATICLIBS=$CORE_TOP/.libs
 DISTDIR=$CORE_TOP/.dists
 
-LIBSODIUM_VER=0.4.5
+LIBSODIUM_VER=1.0.0
 LIBSODIUM_DISTNAME=libsodium-${LIBSODIUM_VER}.tar.gz
 LIBSODIUM_SITE=https://download.libsodium.org/libsodium/releases/
 LIBSODIUM_DIR=$STATICLIBS/libsodium
@@ -29,7 +29,7 @@ LIBZMQ_DISTNAME=zeromq-${LIBZMQ_VER}.tar.gz
 LIBZMQ_SITE=http://download.zeromq.org
 LIBZMQ_DIR=$STATICLIBS/libzmq
 
-CZMQ_VER=2.1.0
+CZMQ_VER=2.2.0
 CZMQ_DISTNAME=czmq-${CZMQ_VER}.tar.gz
 CZMQ_SITE=http://download.zeromq.org/
 CZMQ_DIR=$STATICLIBS/czmq
