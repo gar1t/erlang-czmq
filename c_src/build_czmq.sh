@@ -21,7 +21,7 @@ DISTDIR=$CORE_TOP/.dists
 
 LIBSODIUM_VER=1.0.0
 LIBSODIUM_DISTNAME=libsodium-${LIBSODIUM_VER}.tar.gz
-LIBSODIUM_SITE=https://download.libsodium.org/libsodium/releases/
+LIBSODIUM_SITE=https://github.com/jedisct1/libsodium/releases/download/${LIBSODIUM_VER}/
 LIBSODIUM_DIR=$STATICLIBS/libsodium
 
 LIBZMQ_VER=4.0.4
@@ -164,6 +164,7 @@ do_build()
 clean()
 {
     rm -rf $STATICLIBS
+    rm -rf $DISTDIR
 }
 
 usage()
