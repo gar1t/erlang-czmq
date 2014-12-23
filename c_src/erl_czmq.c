@@ -627,7 +627,7 @@ static void handle_zframe_recv_nowait(ETERM *args, erl_czmq_state *state) {
 
     zframe_destroy(&frame);
     erl_free_term(data_bin);
-    erl_free_term(more_boolean);
+    erl_free_term(data_more);
     erl_free_term(result);
 }
 
