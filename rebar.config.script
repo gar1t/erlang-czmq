@@ -37,8 +37,8 @@ PortEnv = case IsStatic of
                   " " ++ Lib("libsodium", "libsodium.a") ++
                   " -lstdc++"}];
     false ->
-        [{"CFLAGS", "-Wall -c -g -02"},
-         {"LDFLAGS", "-lerl_interface -lei -lstdc++ -lpthread -lczmq"}]
+        [{"CFLAGS", "-Wall -c -g -O2"},
+         {"LDFLAGS", "-lerl_interface -lei -lstdc++ -lpthread -lczmq -lzmq"}]
 end,
 
 %% config to build czmq_port and czmq_benchmark
