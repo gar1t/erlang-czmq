@@ -227,7 +227,7 @@ static void handle_zsocket_type_str(ETERM *args, erl_czmq_state *state) {
         return;
     }
 
-    char *type_str = zsocket_type_str(socket);
+    const char *type_str = zsocket_type_str(socket);
     ETERM *reply = erl_mk_string(type_str);
 
     write_term(reply, state);
