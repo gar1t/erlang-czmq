@@ -25,7 +25,7 @@
 #include "erl_czmq.h"
 #include "vector.h"
 
-static int test() {
+static int test(erl_czmq_state *state) {
     printf("Testing erlang-czmq\n");
     vector_test();
     return 0;
