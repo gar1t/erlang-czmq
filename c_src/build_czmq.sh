@@ -6,8 +6,8 @@ if [ "x$CORE_TOP" = "x" ]; then
 fi
 
 CURLBIN=`which curl`
-if ! test -n "CURLBIN"; then
-    display_error "Error: curl is required. Add it to 'PATH'"
+if [ -z "$CURLBIN" ]; then
+    echo "Error: curl is required. Add it to 'PATH'"
     exit 1
 fi
 
