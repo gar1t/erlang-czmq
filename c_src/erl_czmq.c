@@ -246,7 +246,7 @@ static void handle_zsocket_bind(ETERM *args, erl_czmq_state *state) {
 
     ETERM *endpoint_arg = erl_element(2, args);
     char *endpoint = erl_iolist_to_string(endpoint_arg);
-    int rc = zsocket_bind(socket, endpoint);
+    int rc = zsocket_bind(socket, "%s", endpoint);
     if (rc == -1) {
         write_term(ETERM_ERROR_BIND_FAILED, state);
         return;
@@ -275,7 +275,7 @@ static void handle_zsocket_unbind(ETERM *args, erl_czmq_state *state) {
 
     ETERM *endpoint_arg = erl_element(2, args);
     char *endpoint = erl_iolist_to_string(endpoint_arg);
-    int rc = zsocket_unbind(socket, endpoint);
+    int rc = zsocket_unbind(socket, "%s", endpoint);
     if (rc == -1) {
         write_term(ETERM_ERROR_UNBIND_FAILED, state);
         return;
@@ -297,7 +297,7 @@ static void handle_zsocket_connect(ETERM *args, erl_czmq_state *state) {
 
     ETERM *endpoint_arg = erl_element(2, args);
     char *endpoint = erl_iolist_to_string(endpoint_arg);
-    int rc = zsocket_connect(socket, endpoint);
+    int rc = zsocket_connect(socket, "%s", endpoint);
     if (rc == -1) {
         write_term(ETERM_ERROR_CONNECT_FAILED, state);
         return;
@@ -319,7 +319,7 @@ static void handle_zsocket_disconnect(ETERM *args, erl_czmq_state *state) {
 
     ETERM *endpoint_arg = erl_element(2, args);
     char *endpoint = erl_iolist_to_string(endpoint_arg);
-    int rc = zsocket_disconnect(socket, endpoint);
+    int rc = zsocket_disconnect(socket, "%s", endpoint);
     if (rc == -1) {
         write_term(ETERM_ERROR_DISCONNECT_FAILED, state);
         return;
