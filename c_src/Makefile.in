@@ -1,10 +1,15 @@
+UNAME := $(shell uname)
+
 CC = @CC@
 CFLAGS = -Wall -g2
 INCLUDES = -I@ERLANG_LIB_DIR_erl_interface@/include
-LFLAGS = -L@ERLANG_LIB_DIR_erl_interface@/lib -lstdc++ -lrt
+LFLAGS = -L@ERLANG_LIB_DIR_erl_interface@/lib -lstdc++
+ifneq ($(UNAME), Darwin)
+	LFLAGS += -lrt
+endif
 LIBS = -lerl_interface -lei -lpthread -lczmq -lzmq
 STATIC_DIR = $(shell pwd)/.libs
-BUILD_CZMQ = 
+BUILD_CZMQ =
 ENABLE_STATIC = @enable_static@
 
 ifeq ($(ENABLE_STATIC), yes)
