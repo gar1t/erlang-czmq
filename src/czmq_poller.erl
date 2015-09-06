@@ -68,7 +68,7 @@ poll_interval_option(Options) ->
     proplists:get_value(poll_interval, Options, ?DEFAULT_POLL_INTERVAL).
 
 timestamp() ->
-    {M, S, U} = erlang:now(),
+    {M, S, U} = erlang:timestamp(),
     M * 1000000000 + S * 1000 + U div 1000.
 
 %%%===================================================================
