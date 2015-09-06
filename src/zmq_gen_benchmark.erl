@@ -69,7 +69,7 @@ option(Name, Options, Default) ->
     proplists:get_value(Name, Options, Default).
 
 now_millis() ->
-    {M, S, U} = erlang:now(),
+    {M, S, U} = erlang:timestamp(),
     M * 1000000000 + S * 1000 + U div 1000.
 
 recv_loop(State) ->
