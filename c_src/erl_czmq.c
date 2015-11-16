@@ -77,6 +77,26 @@ ETERM *ETERM_ERROR_INVALID_CERT;
 
 typedef void (*cmd_handler)(ETERM*, erl_czmq_state*);
 
+static bool prepare_cmd_buffer(int term_len, erl_czmq_state *state)
+{
+    if (term_len > state->cmd_buf_size) {
+        state->cmd_buf_size = term_len;
+        state->cmd_buf = realloc(state->cmd_buf, term_len);
+    }
+
+    return state->cmd_buf && term_len <= state->cmd_buf_size;
+}
+
+static bool prepare_reply_buffer(int term_len, erl_czmq_state *state)
+{
+    if (term_len > state->reply_buf_size) {
+        state->reply_buf_size = term_len;
+        state->reply_buf = realloc(state->cmd_buf, term_len);
+    }
+
+    return state->cmd_buf && term_len <= state->reply_buf_size;
+}
+
 static int read_exact(byte *buf, int len)
 {
     int i, got = 0;
@@ -90,18 +110,24 @@ static int read_exact(byte *buf, int len)
     return len;
 }
 
-static int read_cmd(int max, byte *buf)
+static int read_cmd(erl_czmq_state *state)
 {
     int len;
 
-    if (read_exact(buf, 2) != 2)
+    if (read_exact(state->cmd_buf, 4) != 4) {
         return -1;
-    len = (buf[0] << 8) | buf[1];
-    if (len > max) {
-        fprintf(stderr, "command length (%u) > max buf length (%u)", len, max);
-        exit(EXIT_INTERNAL_ERROR);
     }
-    return read_exact(buf, len);
+
+    len = (state->cmd_buf[0] << 24)
+        | (state->cmd_buf[1] << 16)
+        | (state->cmd_buf[2] << 8)
+        | state->cmd_buf[3];
+
+    if (!prepare_cmd_buffer(len, state)) {
+        return -1;
+    }
+
+    return read_exact(state->cmd_buf, len);
 }
 
 static int write_exact(byte *buf, int len)
@@ -121,6 +147,10 @@ static int write_cmd(byte *buf, int len)
 {
     byte li;
 
+    li = (len >> 24) & 0xff;
+    write_exact(&li, 1);
+    li = (len >> 16) & 0xff;
+    write_exact(&li, 1);
     li = (len >> 8) & 0xff;
     write_exact(&li, 1);
     li = len & 0xff;
@@ -128,14 +158,14 @@ static int write_cmd(byte *buf, int len)
     return write_exact(buf, len);
 }
 
-static int safe_erl_encode(ETERM *term, int buf_size, byte *buf) {
+static int safe_erl_encode(ETERM *term, erl_czmq_state *state) {
     int term_len, encoded_len;
-    if ((term_len = erl_term_len(term)) > buf_size) {
-        fprintf(stderr, "term_len %u > buf_size %u", term_len, buf_size);
+    term_len = erl_term_len(term);
+    if (!prepare_reply_buffer(term_len, state)) {
         exit(EXIT_INTERNAL_ERROR);
     }
 
-    if ((encoded_len = erl_encode(term, buf)) != term_len) {
+    if ((encoded_len = erl_encode(term, state->reply_buf)) != term_len) {
         fprintf(stderr, "bad result from erl_encode %u, expected %u",
                term_len, encoded_len);
         exit(EXIT_INTERNAL_ERROR);
@@ -145,7 +175,7 @@ static int safe_erl_encode(ETERM *term, int buf_size, byte *buf) {
 }
 
 static void write_term(ETERM *term, erl_czmq_state *state) {
-    int len = safe_erl_encode(term, ERL_CZMQ_REPLY_BUF_SIZE, state->reply_buf);
+    int len = safe_erl_encode(term, state);
     write_cmd(state->reply_buf, len);
 }
 
@@ -871,9 +901,9 @@ static void handle_zcert_destroy(ETERM *args, erl_czmq_state *state) {
     write_term(ETERM_OK, state);
 }
 
-static void handle_cmd(byte *buf, erl_czmq_state *state, int handler_count,
+static void handle_cmd(erl_czmq_state *state, int handler_count,
                        cmd_handler *handlers) {
-    ETERM *cmd_term = erl_decode(buf);
+    ETERM *cmd_term = erl_decode(state->cmd_buf);
     if (!ERL_IS_TUPLE(cmd_term) || ERL_TUPLE_SIZE(cmd_term) != 2) {
         fprintf(stderr, "invalid cmd format: ");
         erl_print_term(stderr, cmd_term);
@@ -920,6 +950,10 @@ void erl_czmq_init(erl_czmq_state *state) {
     vector_init(&state->sockets);
     state->auth = NULL;
     vector_init(&state->certs);
+    state->reply_buf = malloc(ERL_CZMQ_REPLY_BUF_SIZE);
+    state->reply_buf_size = ERL_CZMQ_REPLY_BUF_SIZE;
+    state->cmd_buf = malloc(CMD_BUF_SIZE);
+    state->cmd_buf_size = CMD_BUF_SIZE;
 }
 
 int erl_czmq_loop(erl_czmq_state *state) {
@@ -955,16 +989,15 @@ int erl_czmq_loop(erl_czmq_state *state) {
     handlers[27] = &handle_zctx_set_int;
 
     int cmd_len;
-    byte cmd_buf[CMD_BUF_SIZE];
 
     while (1) {
-        cmd_len = read_cmd(CMD_BUF_SIZE, cmd_buf);
+        cmd_len = read_cmd(state);
         if (cmd_len == 0) {
             exit(EXIT_OK);
         } else if (cmd_len < 0) {
             exit(EXIT_PORT_READ_ERROR);
         } else {
-            handle_cmd(cmd_buf, state, HANDLER_COUNT, handlers);
+            handle_cmd(state, HANDLER_COUNT, handlers);
         }
     }
 
