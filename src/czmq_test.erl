@@ -18,7 +18,8 @@
          push_pull/1,
          req_rep/1,
          pub_sub/1,
-         sockopts/1]).
+         sockopts/1,
+         large_message/1]).
 
 -include("czmq.hrl").
 
@@ -47,7 +48,8 @@ tests() ->
      fun push_pull/1,
      fun req_rep/1,
      fun pub_sub/1,
-     fun sockopts/1].
+     fun sockopts/1,
+     fun large_message/1].
 
 %%--------------------------------------------------------------------
 %% @doc Run all tests.
@@ -551,5 +553,35 @@ sockopts(Ctx) ->
     "Watson" = czmq:zsocket_identity(Sock),
 
     czmq:zsocket_destroy(Sock),
+
+    io:format("ok~n").
+
+
+%%--------------------------------------------------------------------
+%% @doc Tests growing buffer.
+%% @end
+%%--------------------------------------------------------------------
+
+large_message(Ctx) ->
+    io:format(" * large_message: "),
+
+    Pl1 = ["!" || _ <- lists:seq(1, 1100000)],
+    Pub = czmq:zsocket_new(Ctx, pub),
+    {ok, 0} = czmq:zsocket_bind(Pub, "inproc://pub_sub"),
+
+    Sub1 = czmq:zsocket_new(Ctx, sub),
+    ok = czmq:zsocket_connect(Sub1, "inproc://pub_sub"),
+    ok = czmq:zsocket_set_subscribe(Sub1, ""),
+
+    ok = czmq:zstr_send(Pub, Pl1),
+
+    timer:sleep(100),
+
+    {ok, Pl2} = czmq:zstr_recv_nowait(Sub1),
+    Pl3 = iolist_to_binary(Pl1),
+    Pl3 = iolist_to_binary(Pl2),
+
+    czmq:zsocket_destroy(Sub1),
+    czmq:zsocket_destroy(Pub),
 
     io:format("ok~n").

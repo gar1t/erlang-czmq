@@ -152,7 +152,7 @@ init([]) ->
     {ok, #state{port=Port}}.
 
 start_port() ->
-    open_port({spawn, port_exe()}, [{packet, 2}, binary, exit_status]).
+    open_port({spawn, port_exe()}, [{packet, 4}, binary, exit_status]).
 
 port_exe() ->
     EbinDir = filename:dirname(code:which(?MODULE)),
