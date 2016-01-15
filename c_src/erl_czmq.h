@@ -5,6 +5,7 @@
 #include "vector.h"
 
 #define ERL_CZMQ_REPLY_BUF_SIZE 10240
+#define ERL_CZMQ_MAX_BUF_SIZE 10000000
 
 typedef struct {
     byte *reply_buf;

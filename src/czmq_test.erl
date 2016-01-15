@@ -563,9 +563,13 @@ sockopts(Ctx) ->
 %%--------------------------------------------------------------------
 
 large_message(Ctx) ->
-    io:format(" * large_message: "),
+    io:format(" * large_messages: ", []),
+    [large_message(Ctx, _N) || _N <- lists:seq(1, 10)],
+    io:format("ok~n").
 
-    Pl1 = ["!" || _ <- lists:seq(1, 1100000)],
+large_message(Ctx, N) ->
+    Pl1 = ["!" || _ <- lists:seq(1,  N * 10000)],
+
     Pub = czmq:zsocket_new(Ctx, pub),
     {ok, 0} = czmq:zsocket_bind(Pub, "inproc://pub_sub"),
 
@@ -582,6 +586,5 @@ large_message(Ctx) ->
     Pl3 = iolist_to_binary(Pl2),
 
     czmq:zsocket_destroy(Sub1),
-    czmq:zsocket_destroy(Pub),
+    czmq:zsocket_destroy(Pub).
 
-    io:format("ok~n").

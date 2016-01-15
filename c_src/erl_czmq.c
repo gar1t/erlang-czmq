@@ -79,7 +79,10 @@ typedef void (*cmd_handler)(ETERM*, erl_czmq_state*);
 
 static bool prepare_cmd_buffer(int term_len, erl_czmq_state *state)
 {
-    if (term_len > state->cmd_buf_size) {
+    if (term_len > ERL_CZMQ_MAX_BUF_SIZE) {
+        fprintf(stderr, "term_len %u > max_buf_size %u", term_len, ERL_CZMQ_MAX_BUF_SIZE);
+        exit(EXIT_INTERNAL_ERROR);
+    } else if (term_len > state->cmd_buf_size) {
         state->cmd_buf_size = term_len;
         state->cmd_buf = realloc(state->cmd_buf, term_len);
     }
@@ -89,12 +92,15 @@ static bool prepare_cmd_buffer(int term_len, erl_czmq_state *state)
 
 static bool prepare_reply_buffer(int term_len, erl_czmq_state *state)
 {
-    if (term_len > state->reply_buf_size) {
+    if (term_len > ERL_CZMQ_MAX_BUF_SIZE) {
+        fprintf(stderr, "term_len %u > max_buf_size %u", term_len, ERL_CZMQ_MAX_BUF_SIZE);
+        exit(EXIT_INTERNAL_ERROR);
+    } else if (term_len > state->reply_buf_size) {
         state->reply_buf_size = term_len;
-        state->reply_buf = realloc(state->cmd_buf, term_len);
+        state->reply_buf = realloc(state->reply_buf, term_len);
     }
 
-    return state->cmd_buf && term_len <= state->reply_buf_size;
+    return state->reply_buf && term_len <= state->reply_buf_size;
 }
 
 static int read_exact(byte *buf, int len)
