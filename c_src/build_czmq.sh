@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -e
 
 if [ "x$CORE_TOP" = "x" ]; then
     CORE_TOP=`pwd`
@@ -69,7 +69,7 @@ fetch()
     TARGET=$DISTDIR/$1
     if ! test -f $TARGET; then
         echo "==> Fetch $1 to $TARGET"
-        $CURLBIN --progress-bar -L $2/$1 -o $TARGET
+        $CURLBIN --progress-bar -fL $2/$1 -o $TARGET
     fi
 }
 
