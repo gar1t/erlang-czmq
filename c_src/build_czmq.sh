@@ -31,7 +31,7 @@ LIBZMQ_DIR=$STATICLIBS/libzmq
 
 CZMQ_VER=2.2.0
 CZMQ_DISTNAME=czmq-${CZMQ_VER}.tar.gz
-CZMQ_SITE=http://download.zeromq.org/
+CZMQ_SITE=https://archive.org/download/zeromq_czmq_${CZMQ_VER}
 CZMQ_DIR=$STATICLIBS/czmq
 
 [ "$MACHINE" ] || MACHINE=`(uname -m) 2>/dev/null` || MACHINE="unknown"
