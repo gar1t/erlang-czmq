@@ -26,7 +26,7 @@ LIBSODIUM_DIR=$STATICLIBS/libsodium
 
 LIBZMQ_VER=4.0.4
 LIBZMQ_DISTNAME=zeromq-${LIBZMQ_VER}.tar.gz
-LIBZMQ_SITE=http://download.zeromq.org
+LIBZMQ_SITE=https://archive.org/download/zeromq_${LIBZMQ_VER}
 LIBZMQ_DIR=$STATICLIBS/libzmq
 
 CZMQ_VER=2.2.0
